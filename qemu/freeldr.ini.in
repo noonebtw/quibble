@@ -1,0 +1,10 @@
+[FREELOADER]
+TimeOut=10
+DefaultOS=Windows
+
+[Operating Systems]
+Windows="Windows"
+
+[Windows]
+SystemPath=${DRIVE_NAME}\Windows
+Options=/DEBUG /ONECPU

@@ -149,3 +149,7 @@ elseif(MSVC)
 target_link_options(btrfs PRIVATE "/SUBSYSTEM:EFI_BOOT_SERVICE_DRIVER")
 target_compile_options(btrfs PRIVATE "/Oi-")
 endif()
+
+#---------------------------------
+
+add_custom_target(qemu COMMAND ${PROJECT_SOURCE_DIR}/qemu/qemu.sh ARGS ${PROJECT_BINARY_DIR} WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/qemu DEPENDS quibble btrfs)
