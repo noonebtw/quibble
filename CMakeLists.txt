@@ -152,4 +152,4 @@ endif()
 
 #---------------------------------
 
-add_custom_target(qemu COMMAND ${PROJECT_SOURCE_DIR}/qemu/qemu.sh ARGS ${PROJECT_BINARY_DIR} WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/qemu DEPENDS quibble btrfs)
+add_custom_target(qemu COMMAND ${PROJECT_SOURCE_DIR}/qemu/qemu.sh ${PROJECT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/qemu DEPENDS quibble btrfs)
