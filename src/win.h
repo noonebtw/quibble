@@ -3387,41 +3387,82 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11, InstalledMemory.Ranges)
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11, InstalledMemory.RangeCount) == 0xec0, "LOADER_PARAMETER_EXTENSION_WIN11 InstalledMemory.RangeCount");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11, HotPatchList) == 0xec8, "LOADER_PARAMETER_EXTENSION_WIN11 HotPatchList");
 
+typedef struct {
+    uint8_t Signature[5];
+    uint8_t Checksum;
+    uint8_t Length;
+    uint8_t MajorVersion;
+    uint8_t MinorVersion;
+    uint8_t Docrev;
+    uint8_t EntryPointRevision;
+    uint8_t Reserved;
+    uint32_t StructureTableMaximumSize;
+    uint64_t StructureTableAddress;
+} SMBIOS3_TABLE_HEADER;
+
 #pragma pack(push,1)
 typedef struct {
     uint32_t Size;
     PROFILE_PARAMETER_BLOCK Profile;
     uint32_t padding1;
     void* EmInfFileImage;
-    uintptr_t EmInfFileSize;
+    uint32_t EmInfFileSize;
+    uint32_t padding2;
     void* TriageDumpBlock;
     HEADLESS_LOADER_BLOCK* HeadlessLoaderBlock;
-    SMBIOS_TABLE_HEADER* SMBiosEPSHeader;
+    SMBIOS3_TABLE_HEADER* SMBiosEPSHeader;
     void* DrvDBImage;
-    uintptr_t DrvDBSize;
+    uint32_t DrvDBSize;
+    uint32_t padding3;
     void* DrvDBPatchImage;
     uint32_t DrvDBPatchSize;
-    uint32_t padding2;
+    uint32_t padding4;
     NETWORK_LOADER_BLOCK* NetworkLoaderBlock;
     LIST_ENTRY FirmwareDescriptorListHead;
     void* AcpiTable;
     uint32_t AcpiTableSize;
     struct {
-        uint32_t BootViaWinload:1;
-        uint32_t BootViaEFI:1;
-        uint32_t Reserved:30;
+        uint32_t LastBootSucceeded : 1;
+        uint32_t LastBootShutdown : 1;
+        uint32_t IoPortAccessSupported : 1;
+        uint32_t BootDebuggerActive : 1;
+        uint32_t StrongCodeGuarantees : 1;
+        uint32_t HardStrongCodeGuarantees : 1;
+        uint32_t SidSharingDisabled : 1;
+        uint32_t TpmInitialized : 1;
+        uint32_t VsmConfigured : 1;
+        uint32_t IumEnabled : 1;
+        uint32_t IsSmbboot : 1;
+        uint32_t BootLogEnabled : 1;
+        uint32_t DriverVerifierEnabled : 1;
+        uint32_t SuppressMonitorX : 1;
+        uint32_t KernelCetEnabled : 1;
+        uint32_t SuppressSmap : 1;
+        uint32_t PointerAuthKernelIpEnabled : 1;
+        uint32_t SplitLargeNumaNodes : 1;
+        uint32_t KernelCetAuditModeEnabled : 1;
+        uint32_t VerboseSELEnabled : 1;
+        uint32_t EarlyCrashDumpEnabled : 1;
+        uint32_t FeatureSimulations : 6;
+        uint32_t MicrocodeSelfHosting : 1;
+        uint32_t XhciLegacyHandoffSkip : 1;
+        uint32_t DisableInsiderOptInHVCI : 1;
+        uint32_t MicrocodeMinVerSupported : 1;
+        uint32_t GpuIommuEnabled : 1;
     };
     LOADER_PERFORMANCE_DATA_1903 LoaderPerformanceData;
     LIST_ENTRY BootApplicationPersistentData;
     void* WmdTestResult;
     GUID BootIdentifier;
-    uintptr_t ResumePages;
+    uint32_t ResumePages;
+    uint32_t padding5;
     void* DumpHeader;
     void* BgContext;
     void* NumaLocalityInfo;
     void* NumaGroupAssignment;
     LIST_ENTRY AttachedHives;
-    uintptr_t MemoryCachingRequirementsCount;
+    uint32_t MemoryCachingRequirementsCount;
+    uint32_t padding6;
     void* MemoryCachingRequirements;
     BOOT_ENTROPY_LDR_RESULT_WIN1809 BootEntropyResult;
     uint64_t ProcessorCounterFrequency;
@@ -3432,7 +3473,15 @@ typedef struct {
     LIST_ENTRY PrmFirmwareModuleList;
     int64_t SystemTime;
     uint64_t TimeStampAtSystemTimeRead;
-    uint64_t BootFlags;
+    union {
+        uint64_t BootFlags;
+        struct {
+            uint64_t DbgMenuOsSelection : 1;
+            uint64_t DbgHiberBoot : 1;
+            uint64_t DbgSoftRestart : 1;
+            uint64_t DbgMeasuredLaunch : 1;
+        };
+    };
     union {
         uint64_t InternalBootFlags;
         struct {
@@ -3443,23 +3492,23 @@ typedef struct {
     };
     void* WfsFPData;
     uint32_t WfsFPDataSize;
-    uint32_t padding3;
+    uint32_t padding7;
     LOADER_BUGCHECK_PARAMETERS BugcheckParameters;
     void* ApiSetSchema;
     uint32_t ApiSetSchemaSize;
-    uint32_t padding4;
+    uint32_t padding8;
     LIST_ENTRY ApiSetSchemaExtensions;
     UNICODE_STRING AcpiBiosVersion;
     UNICODE_STRING SmbiosVersion;
     UNICODE_STRING EfiVersion;
     DEBUG_DEVICE_DESCRIPTOR* KdDebugDevice;
     OFFLINE_CRASHDUMP_CONFIGURATION_TABLE_WIN10 OfflineCrashdumpConfigurationTable;
-    uint32_t padding5;
+    uint32_t padding9;
     UNICODE_STRING ManufacturingProfile;
     void* BbtBuffer;
     uint64_t XsaveAllowedFeatures;
     uint32_t XsaveFlags;
-    uint32_t padding6;
+    uint32_t padding10;
     void* BootOptions;
     uint32_t IumEnablement;
     uint32_t IumPolicy;
@@ -3469,7 +3518,7 @@ typedef struct {
     uint32_t CodeIntegrityDataSize;
     LOADER_HIVE_RECOVERY_INFO SystemHiveRecoveryInfo;
     uint32_t SoftRestartCount;
-    uint32_t padding7;
+    uint32_t padding11;
     int64_t SoftRestartTime;
     void* HypercallCodeVa;
     void* HalVirtualAddress;
@@ -3486,9 +3535,8 @@ typedef struct {
     uint32_t RetpolineReserveSize;
     struct {
         void* CodeBase;
-        uint32_t CodeSize;
+        uint64_t CodeSize;
     } MiniExecutive;
-    uint32_t padding8;
     VSM_PERFORMANCE_DATA VsmPerformanceData;
     NUMA_MEMORY_RANGE* NumaMemoryRanges;
     uint32_t NumaMemoryRangeCount;
@@ -3507,21 +3555,21 @@ typedef struct {
         INSTALLED_MEMORY_RANGE* Ranges;
         uint32_t RangeCount;
     } InstalledMemory;
-    uint32_t padding9;
+    uint32_t padding12;
     LIST_ENTRY HotPatchList;
     void* BSPMicrocodeData;
     uint32_t BSPMicrocodeDataSize;
-    uint32_t padding10;
+    uint32_t padding13;
     struct {
         GUID TargetVolume;
         UNICODE_STRING* CimFiles;
         uint32_t CimFilesCount;
     } CimfsInformation;
-    uint32_t padding11;
+    uint32_t padding14;
     int64_t HalSoftRebootDatabase;
     uint32_t KasanEnabled : 1;
     uint32_t Unused2 : 31;
-    uint32_t padding12;
+    uint32_t padding15;
     uint64_t PerformanceDataFrequency;
 } LOADER_PARAMETER_EXTENSION_WIN11_22H2;
 #pragma pack(pop)
@@ -3603,7 +3651,8 @@ static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, MaxPciBusNumber) =
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, FeatureSettings) == 0xda4, "LOADER_PARAMETER_EXTENSION_WIN11_22H2 FeatureSettings");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, HotPatchReserveSize) == 0xda8, "LOADER_PARAMETER_EXTENSION_WIN11_22H2 HotPatchReserveSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, RetpolineReserveSize) == 0xdac, "LOADER_PARAMETER_EXTENSION_WIN11_22H2 RetpolineReserveSize");
-static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, MiniExecutive) == 0xdb0, "LOADER_PARAMETER_EXTENSION_WIN11_22H2 MiniExecutive");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, MiniExecutive.CodeBase) == 0xdb0, "LOADER_PARAMETER_EXTENSION_WIN11_22H2 MiniExecutive.CodeBase");
+static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, MiniExecutive.CodeSize) == 0xdb8, "LOADER_PARAMETER_EXTENSION_WIN11_22H2 MiniExecutive.CodeSize");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, VsmPerformanceData) == 0xdc0, "LOADER_PARAMETER_EXTENSION_WIN11_22H2 VsmPerformanceData");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, NumaMemoryRanges) == 0xe00, "LOADER_PARAMETER_EXTENSION_WIN11_22H2 NumaMemoryRanges");
 static_assert(offsetof(LOADER_PARAMETER_EXTENSION_WIN11_22H2, NumaMemoryRangeCount) == 0xe08, "LOADER_PARAMETER_EXTENSION_WIN11_22H2 NumaMemoryRangeCount");
@@ -3635,6 +3684,10 @@ typedef struct {
     uint32_t MachineType;
     uint32_t VirtualBias;
 } I386_LOADER_BLOCK;
+
+typedef struct {
+    uint32_t PlaceHolder;
+} ARM_LOADER_BLOCK;
 
 typedef struct _SETUP_LOADER_BLOCK SETUP_LOADER_BLOCK;
 
@@ -4277,6 +4330,7 @@ typedef struct {
     void* Extension;
     union {
         I386_LOADER_BLOCK I386;
+        ARM_LOADER_BLOCK Arm;
     } u;
     FIRMWARE_INFORMATION_LOADER_BLOCK_WIN81 FirmwareInformation;
     char* OsBootstatPathName;
@@ -4316,6 +4370,7 @@ static_assert(offsetof(LOADER_PARAMETER_BLOCK_WIN11, NlsData) == 0xe0, "LOADER_P
 static_assert(offsetof(LOADER_PARAMETER_BLOCK_WIN11, ArcDiskInformation) == 0xe8, "LOADER_PARAMETER_BLOCK_WIN11 ArcDiskInformation");
 static_assert(offsetof(LOADER_PARAMETER_BLOCK_WIN11, Extension) == 0xf0, "LOADER_PARAMETER_BLOCK_WIN11 Extension");
 static_assert(offsetof(LOADER_PARAMETER_BLOCK_WIN11, u.I386) == 0xf8, "LOADER_PARAMETER_BLOCK_WIN11 I386");
+static_assert(offsetof(LOADER_PARAMETER_BLOCK_WIN11, u.Arm) == 0xf8, "LOADER_PARAMETER_BLOCK_WIN11 Arm");
 static_assert(offsetof(LOADER_PARAMETER_BLOCK_WIN11, FirmwareInformation) == 0x108, "LOADER_PARAMETER_BLOCK_WIN11 FirmwareInformation");
 static_assert(offsetof(LOADER_PARAMETER_BLOCK_WIN11, OsBootstatPathName) == 0x148, "LOADER_PARAMETER_BLOCK_WIN11 OsBootstatPathName");
 static_assert(offsetof(LOADER_PARAMETER_BLOCK_WIN11, ArcOSDataDeviceName) == 0x150, "LOADER_PARAMETER_BLOCK_WIN11 ArcOSDataDeviceName");
