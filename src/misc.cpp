@@ -18,6 +18,8 @@
 #include "misc.h"
 #include <stdbool.h>
 
+extern "C" {
+
 void wcsncpy(wchar_t* dest, const wchar_t* src, size_t n) {
     size_t i = 0;
 
@@ -888,4 +890,6 @@ char* strstr(const char* haystack, const char* needle) {
     }
 
     return NULL;
+}
+
 }
