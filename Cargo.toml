@@ -14,7 +14,12 @@ name = "quibble"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [dependencies]
+uefi = {version = "0.24.0", features = ["alloc", "logger", "unstable"]}
+uefi-services = {version = "0.21.0", features = ["qemu"]}
+
 quibble-rs = {path= "./quibble-rs"}
+
+log = "*"
 
 [build-dependencies]
 cc = { version = "1.0", features = ["parallel"] }

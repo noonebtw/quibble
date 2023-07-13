@@ -1,19 +1,27 @@
 #![no_std]
-#![feature(abi_efiapi)]
+#![feature(lang_items)]
 #![no_main]
 
-use core::{ffi::c_void, panic::PanicInfo};
+extern crate alloc;
 
-#[panic_handler]
-fn panic(_panic: &PanicInfo<'_>) -> ! {
-    loop {}
-}
+#[lang = "eh_personality"]
+#[no_mangle]
+pub extern "C" fn rust_eh_personality() {}
+
+use uefi::{
+    table::{Boot, SystemTable},
+    Handle, Status,
+};
 
 extern "win64" {
-    fn efi_main(image: *mut (), st: *mut ()) -> usize;
+    fn efi_main(image: Handle, st: SystemTable<Boot>) -> Status;
 }
 
 #[no_mangle]
-fn __main(image: *mut (), st: *mut ()) -> usize {
+extern "efiapi" fn __main(image: Handle, mut st: SystemTable<Boot>) -> Status {
+    unsafe {
+        st.boot_services().set_image_handle(image);
+    }
+    uefi_services::init(&mut st).unwrap();
     unsafe { efi_main(image, st) }
 }
