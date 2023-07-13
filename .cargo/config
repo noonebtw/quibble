@@ -1,0 +1,8 @@
+[build]
+target = "x86_64-pc-windows-gnu"
+rustflags = ["-C", "link-args=-e __main -static -nostartfiles -Wl,--subsystem,10 -Wl,--no-demangle"]
+
+
+[target.'x86_64-pc-windows-gnu']
+# rustflags = ["-Ctarget-feature=+sse,+mmx,+sse2,-soft-float"]
+runner = "./qemu.sh"
