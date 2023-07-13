@@ -1,9 +1,33 @@
-use std::path::Path;
+use std::os::unix::fs;
 
-// Example custom build script.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Profile {
+    Release,
+    Debug,
+}
+
+impl Profile {
+    fn from_str(profile: &str) -> Option<Self> {
+        if profile == "release" {
+            Some(Self::Release)
+        } else if profile == "debug" {
+            Some(Self::Debug)
+        } else {
+            None
+        }
+    }
+
+    fn for_cmake(&self) -> &str {
+        match self {
+            Profile::Release => "Release",
+            Profile::Debug => "Debug",
+        }
+    }
+}
+
 fn main() {
-    // Tell Cargo that if the given file changes, to rerun this build script.
-    let quibble = build_quibble();
+    let profile = Profile::from_str(&std::env::var("PROFILE").expect("profile")).expect("profile");
+    let quibble = build_quibble(profile);
 
     println!(
         "cargo:rustc-link-search=native={}",
@@ -18,55 +42,32 @@ fn main() {
         quibble.join("build").join("harfbuzz").display()
     );
     println!("cargo:rustc-link-lib=static=libquibble");
-    println!("cargo:rustc-link-lib=static=freetype");
     println!("cargo:rustc-link-lib=static=harfbuzz");
+    println!("cargo:rustc-link-lib=static=freetype");
 }
 
-fn build_bindings() {
-    let crate_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    cbindgen::Builder::new()
-        .with_config(cbindgen::Config::from_file("cbindgen.toml").expect("cbindgen config file."))
-        .with_crate(crate_dir)
-        .generate()
-        .expect("Failed to generate C bindings!")
-        .write_to_file("include/quibble-rs.h");
-}
-
-fn build_quibble() -> std::path::PathBuf {
-    let dst = cmake::Config::new(".").profile("Release").build();
-    dst
-}
-
-fn build_freetype() -> std::path::PathBuf {
-    let dst = cmake::Config::new("freetype")
-        .define("FT_DISABLE_BZIP2", "TRUE")
-        .define("FT_DISABLE_HARFBUZZ", "TRUE")
-        .define("FT_DISABLE_PNG", "TRUE")
-        .profile("Release")
-        .define("FT_DISABLE_ZLIB", "TRUE")
-        .define("FT_DISABLE_BROTLI", "TRUE")
-        .cflag("-static -fno-stack-check -fno-stack-protector -mno-stack-arg-probe -DFT_CONFIG_OPTION_DISABLE_STREAM_SUPPORT=1")
+fn build_quibble(profile: Profile) -> std::path::PathBuf {
+    let dst = cmake::Config::new(".")
+        .profile(profile.for_cmake())
+        .define("CMAKE_EXPORT_COMPILE_COMMANDS", "1")
+        .define("CMAKE_SYSTEM_PROCESSOR", "AMD64")
+        .define("CMAKE_EXE_LINKER_FLAGS", "-static")
         .build();
 
-    println!(
-        "cargo:rustc-link-search=native={}",
-        dst.join("lib").display()
+    let build_dir = dst.join("build");
+
+    _ = std::fs::copy(
+        build_dir.join("ntfs").join("ntfs.efi"),
+        "qemu/esp/EFI/BOOT/drivers/ntfs.efi",
     );
-    println!("cargo:rustc-link-lib=static=freetype");
-    dst
-}
-
-fn build_harfbuzz() -> std::path::PathBuf {
-    let dst = cmake::Config::new("harfbuzz")
-        .profile("Release")
-        .cflag("-static -fno-stack-check -fno-stack-protector -mno-stack-arg-probe -Wa,-mbig-obj -DHB_TINY -Dhb_malloc_impl=hb_malloc_impl2 -Dhb_calloc_impl=hb_calloc_impl2 -Dhb_realloc_impl=hb_realloc_impl2 -Dhb_free_impl=hb_free_impl2")
-        .build();
-
-    println!(
-        "cargo:rustc-link-search=native={}",
-        dst.join("lib").display()
+    _ = std::fs::copy(
+        build_dir.join("btrfs").join("btrfs.efi"),
+        "qemu/esp/EFI/BOOT/drivers/btrfs.efi",
     );
-    println!("cargo:rustc-link-lib=static=harfbuzz");
 
+    _ = fs::symlink(
+        build_dir.join("compile_commands.json"),
+        "compile_commands.json",
+    );
     dst
 }
