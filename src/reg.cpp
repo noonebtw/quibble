@@ -24,870 +24,920 @@
 #include "print.h"
 
 typedef struct {
-    EFI_REGISTRY_HIVE pub;
-    size_t size;
-    UINTN pages;
-    void* data;
+  EFI_REGISTRY_HIVE pub;
+  size_t            size;
+  UINTN             pages;
+  void*             data;
 } hive;
 
-static EFI_HANDLE reg_handle = NULL;
+static EFI_HANDLE            reg_handle = NULL;
 static EFI_REGISTRY_PROTOCOL proto;
-static EFI_BOOT_SERVICES* bs;
+static EFI_BOOT_SERVICES*    bs;
 
-static EFI_STATUS EFIAPI OpenHive(EFI_FILE_HANDLE File, EFI_REGISTRY_HIVE** Hive);
+static EFI_STATUS EFIAPI OpenHive(EFI_FILE_HANDLE     File,
+                                  EFI_REGISTRY_HIVE** Hive);
 
 using namespace std;
 
 EFI_STATUS reg_register(EFI_BOOT_SERVICES* BootServices) {
-    EFI_GUID reg_guid = WINDOWS_REGISTRY_PROTOCOL;
+  EFI_GUID reg_guid = WINDOWS_REGISTRY_PROTOCOL;
 
-    proto.OpenHive = OpenHive;
+  proto.OpenHive = OpenHive;
 
-    bs = BootServices;
+  bs = BootServices;
 
-    return bs->InstallProtocolInterface(&reg_handle, &reg_guid, EFI_NATIVE_INTERFACE, &proto);
+  return bs->InstallProtocolInterface(&reg_handle, &reg_guid,
+                                      EFI_NATIVE_INTERFACE, &proto);
 }
 
 EFI_STATUS reg_unregister() {
-    EFI_GUID reg_guid = WINDOWS_REGISTRY_PROTOCOL;
+  EFI_GUID reg_guid = WINDOWS_REGISTRY_PROTOCOL;
 
-    return bs->UninstallProtocolInterface(&reg_handle, &reg_guid, &proto);
+  return bs->UninstallProtocolInterface(&reg_handle, &reg_guid, &proto);
 }
 
 static bool check_header(hive* h) {
-    HBASE_BLOCK* base_block = (HBASE_BLOCK*)h->data;
-    uint32_t csum;
-    bool dirty = false;
+  HBASE_BLOCK* base_block = (HBASE_BLOCK*)h->data;
+  uint32_t     csum;
+  bool         dirty = false;
 
-    if (base_block->Signature != HV_HBLOCK_SIGNATURE) {
-        print_string("Invalid signature.\n");
-        return false;
-    }
+  if (base_block->Signature != HV_HBLOCK_SIGNATURE) {
+    print_string("Invalid signature.\n");
+    return false;
+  }
 
-    if (base_block->Major != HSYS_MAJOR) {
-        print_string("Invalid major value.\n");
-        return false;
-    }
+  if (base_block->Major != HSYS_MAJOR) {
+    print_string("Invalid major value.\n");
+    return false;
+  }
 
-    if (base_block->Minor < HSYS_MINOR) {
-        print_string("Invalid minor value.\n");
-        return false;
-    }
+  if (base_block->Minor < HSYS_MINOR) {
+    print_string("Invalid minor value.\n");
+    return false;
+  }
 
-    if (base_block->Type != HFILE_TYPE_PRIMARY) {
-        print_string("Type was not HFILE_TYPE_PRIMARY.\n");
-        return false;
-    }
+  if (base_block->Type != HFILE_TYPE_PRIMARY) {
+    print_string("Type was not HFILE_TYPE_PRIMARY.\n");
+    return false;
+  }
 
-    if (base_block->Format != HBASE_FORMAT_MEMORY) {
-        print_string("Format was not HBASE_FORMAT_MEMORY.\n");
-        return false;
-    }
+  if (base_block->Format != HBASE_FORMAT_MEMORY) {
+    print_string("Format was not HBASE_FORMAT_MEMORY.\n");
+    return false;
+  }
 
-    if (base_block->Cluster != 1) {
-        print_string("Cluster was not 1.\n");
-        return false;
-    }
+  if (base_block->Cluster != 1) {
+    print_string("Cluster was not 1.\n");
+    return false;
+  }
 
-    if (base_block->Sequence1 != base_block->Sequence2) {
-        print_string("Sequence1 != Sequence2.\n");
-        base_block->Sequence2 = base_block->Sequence1;
-        dirty = true;
-    }
+  if (base_block->Sequence1 != base_block->Sequence2) {
+    print_string("Sequence1 != Sequence2.\n");
+    base_block->Sequence2 = base_block->Sequence1;
+    dirty                 = true;
+  }
 
-    // check checksum
+  // check checksum
 
-    csum = 0;
+  csum = 0;
 
-    for (unsigned int i = 0; i < 127; i++) {
-        csum ^= ((uint32_t*)h->data)[i];
-    }
+  for (unsigned int i = 0; i < 127; i++) {
+    csum ^= ((uint32_t*)h->data)[i];
+  }
 
-    if (csum == 0xffffffff)
-        csum = 0xfffffffe;
-    else if (csum == 0)
-        csum = 1;
+  if (csum == 0xffffffff)
+    csum = 0xfffffffe;
+  else if (csum == 0)
+    csum = 1;
 
-    if (csum != base_block->CheckSum) {
-        print_string("Invalid checksum.\n");
-        base_block->CheckSum = csum;
-        dirty = true;
-    }
+  if (csum != base_block->CheckSum) {
+    print_string("Invalid checksum.\n");
+    base_block->CheckSum = csum;
+    dirty                = true;
+  }
 
-    if (dirty) {
-        print_string("Hive is dirty.\n");
+  if (dirty) {
+    print_string("Hive is dirty.\n");
 
-        // FIXME - recover by processing LOG files (old style, < Windows 8.1)
-        // FIXME - recover by processing LOG files (new style, >= Windows 8.1)
-    }
+    // FIXME - recover by processing LOG files (old style, < Windows 8.1)
+    // FIXME - recover by processing LOG files (new style, >= Windows 8.1)
+  }
 
-    return true;
+  return true;
 }
 
 static EFI_STATUS EFIAPI close_hive(EFI_REGISTRY_HIVE* This) {
-    hive* h = _CR(This, hive, pub);
+  hive* h = _CR(This, hive, pub);
 
-    if (h->data)
-        bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)h->data, h->pages);
+  if (h->data)
+    bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)h->data, h->pages);
 
-    bs->FreePool(h);
+  bs->FreePool(h);
 
-    return EFI_SUCCESS;
+  return EFI_SUCCESS;
 }
 
 static EFI_STATUS EFIAPI find_root(EFI_REGISTRY_HIVE* This, HKEY* Key) {
-    hive* h = _CR(This, hive, pub);
-    HBASE_BLOCK* base_block = (HBASE_BLOCK*)h->data;
+  hive*        h          = _CR(This, hive, pub);
+  HBASE_BLOCK* base_block = (HBASE_BLOCK*)h->data;
 
-    *Key = 0x1000 + base_block->RootCell;
+  *Key = 0x1000 + base_block->RootCell;
 
-    return EFI_SUCCESS;
+  return EFI_SUCCESS;
 }
 
-static EFI_STATUS EFIAPI enum_keys(EFI_REGISTRY_HIVE* This, HKEY Key, UINT32 Index, wchar_t* Name, UINT32 NameLength) {
-    hive* h = _CR(This, hive, pub);
-    int32_t size;
-    CM_KEY_NODE* nk;
-    CM_KEY_FAST_INDEX* lh;
+static EFI_STATUS EFIAPI enum_keys(EFI_REGISTRY_HIVE* This,
+                                   HKEY               Key,
+                                   UINT32             Index,
+                                   wchar_t*           Name,
+                                   UINT32             NameLength) {
+  hive*              h = _CR(This, hive, pub);
+  int32_t            size;
+  CM_KEY_NODE*       nk;
+  CM_KEY_FAST_INDEX* lh;
+  CM_KEY_NODE*       nk2;
+  bool               overflow = false;
+
+  // FIXME - make sure no buffer overruns (here and elsewhere)
+
+  // find parent key node
+
+  size = -*(int32_t*)((uint8_t*)h->data + Key);
+
+  if (size < 0)
+    return EFI_NOT_FOUND;
+
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    return EFI_INVALID_PARAMETER;
+
+  nk = (CM_KEY_NODE*)((uint8_t*)h->data + Key + sizeof(int32_t));
+
+  if (nk->Signature != CM_KEY_NODE_SIGNATURE)
+    return EFI_INVALID_PARAMETER;
+
+  if ((uint32_t)size <
+      sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk->NameLength)
+    return EFI_INVALID_PARAMETER;
+
+  // FIXME - volatile keys?
+
+  if (Index >= nk->SubKeyCount || nk->SubKeyList == 0xffffffff)
+    return EFI_NOT_FOUND;
+
+  // go to key index
+
+  size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList);
+
+  if (size < 0)
+    return EFI_NOT_FOUND;
+
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]))
+    return EFI_INVALID_PARAMETER;
+
+  lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList +
+                            sizeof(int32_t));
+
+  if (lh->Signature != CM_KEY_HASH_LEAF && lh->Signature != CM_KEY_FAST_LEAF)
+    return EFI_INVALID_PARAMETER;
+
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) +
+                           (lh->Count * sizeof(CM_INDEX)))
+    return EFI_INVALID_PARAMETER;
+
+  if (Index >= lh->Count)
+    return EFI_INVALID_PARAMETER;
+
+  // find child key node
+
+  size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + lh->List[Index].Cell);
+
+  if (size < 0)
+    return EFI_NOT_FOUND;
+
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    return EFI_INVALID_PARAMETER;
+
+  nk2 = (CM_KEY_NODE*)((uint8_t*)h->data + 0x1000 + lh->List[Index].Cell +
+                       sizeof(int32_t));
+
+  if (nk2->Signature != CM_KEY_NODE_SIGNATURE)
+    return EFI_INVALID_PARAMETER;
+
+  if ((uint32_t)size <
+      sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk2->NameLength)
+    return EFI_INVALID_PARAMETER;
+
+  if (nk2->Flags & KEY_COMP_NAME) {
+    unsigned int i      = 0;
+    char*        nkname = (char*)nk2->Name;
+
+    for (i = 0; i < nk2->NameLength; i++) {
+      if (i >= NameLength) {
+        overflow = true;
+        break;
+      }
+
+      Name[i] = nkname[i];
+    }
+
+    Name[i] = 0;
+  } else {
+    unsigned int i = 0;
+
+    for (i = 0; i < nk2->NameLength / sizeof(wchar_t); i++) {
+      if (i >= NameLength) {
+        overflow = true;
+        break;
+      }
+
+      Name[i] = nk2->Name[i];
+    }
+
+    Name[i] = 0;
+  }
+
+  return overflow ? EFI_BUFFER_TOO_SMALL : EFI_SUCCESS;
+}
+
+static EFI_STATUS find_child_key(hive*          h,
+                                 HKEY           parent,
+                                 const wchar_t* namebit,
+                                 UINTN          nblen,
+                                 HKEY*          key) {
+  int32_t            size;
+  CM_KEY_NODE*       nk;
+  CM_KEY_FAST_INDEX* lh;
+
+  // find parent key node
+
+  size = -*(int32_t*)((uint8_t*)h->data + parent);
+
+  if (size < 0)
+    return EFI_NOT_FOUND;
+
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    return EFI_INVALID_PARAMETER;
+
+  nk = (CM_KEY_NODE*)((uint8_t*)h->data + parent + sizeof(int32_t));
+
+  if (nk->Signature != CM_KEY_NODE_SIGNATURE)
+    return EFI_INVALID_PARAMETER;
+
+  if ((uint32_t)size <
+      sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk->NameLength)
+    return EFI_INVALID_PARAMETER;
+
+  if (nk->SubKeyCount == 0 || nk->SubKeyList == 0xffffffff)
+    return EFI_NOT_FOUND;
+
+  // go to key index
+
+  size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList);
+
+  if (size < 0)
+    return EFI_NOT_FOUND;
+
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]))
+    return EFI_INVALID_PARAMETER;
+
+  lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList +
+                            sizeof(int32_t));
+
+  if (lh->Signature != CM_KEY_HASH_LEAF && lh->Signature != CM_KEY_FAST_LEAF)
+    return EFI_INVALID_PARAMETER;
+
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) +
+                           (lh->Count * sizeof(CM_INDEX)))
+    return EFI_INVALID_PARAMETER;
+
+  // FIXME - check against hashes if CM_KEY_HASH_LEAF
+
+  for (unsigned int i = 0; i < lh->Count; i++) {
     CM_KEY_NODE* nk2;
-    bool overflow = false;
 
-    // FIXME - make sure no buffer overruns (here and elsewhere)
-
-    // find parent key node
-
-    size = -*(int32_t*)((uint8_t*)h->data + Key);
+    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + lh->List[i].Cell);
 
     if (size < 0)
-        return EFI_NOT_FOUND;
+      continue;
 
     if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
-        return EFI_INVALID_PARAMETER;
+      continue;
 
-    nk = (CM_KEY_NODE*)((uint8_t*)h->data + Key + sizeof(int32_t));
-
-    if (nk->Signature != CM_KEY_NODE_SIGNATURE)
-        return EFI_INVALID_PARAMETER;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk->NameLength)
-        return EFI_INVALID_PARAMETER;
-
-    // FIXME - volatile keys?
-
-    if (Index >= nk->SubKeyCount || nk->SubKeyList == 0xffffffff)
-        return EFI_NOT_FOUND;
-
-    // go to key index
-
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList);
-
-    if (size < 0)
-        return EFI_NOT_FOUND;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]))
-        return EFI_INVALID_PARAMETER;
-
-    lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
-
-    if (lh->Signature != CM_KEY_HASH_LEAF && lh->Signature != CM_KEY_FAST_LEAF)
-        return EFI_INVALID_PARAMETER;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_INDEX)))
-        return EFI_INVALID_PARAMETER;
-
-    if (Index >= lh->Count)
-        return EFI_INVALID_PARAMETER;
-
-    // find child key node
-
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + lh->List[Index].Cell);
-
-    if (size < 0)
-        return EFI_NOT_FOUND;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
-        return EFI_INVALID_PARAMETER;
-
-    nk2 = (CM_KEY_NODE*)((uint8_t*)h->data + 0x1000 + lh->List[Index].Cell + sizeof(int32_t));
+    nk2 = (CM_KEY_NODE*)((uint8_t*)h->data + 0x1000 + lh->List[i].Cell +
+                         sizeof(int32_t));
 
     if (nk2->Signature != CM_KEY_NODE_SIGNATURE)
-        return EFI_INVALID_PARAMETER;
+      continue;
 
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk2->NameLength)
-        return EFI_INVALID_PARAMETER;
+    if ((uint32_t)size <
+        sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk2->NameLength)
+      continue;
+
+    // FIXME - use string protocol here to do comparison properly?
 
     if (nk2->Flags & KEY_COMP_NAME) {
-        unsigned int i = 0;
-        char* nkname = (char*)nk2->Name;
+      unsigned int j;
+      char*        name = (char*)nk2->Name;
 
-        for (i = 0; i < nk2->NameLength; i++) {
-            if (i >= NameLength) {
-                overflow = true;
-                break;
-            }
+      if (nk2->NameLength != nblen)
+        continue;
 
-            Name[i] = nkname[i];
-        }
+      for (j = 0; j < nk2->NameLength; j++) {
+        wchar_t c1 = name[j];
+        wchar_t c2 = namebit[j];
 
-        Name[i] = 0;
+        if (c1 >= 'A' && c1 <= 'Z')
+          c1 = c1 - 'A' + 'a';
+
+        if (c2 >= 'A' && c2 <= 'Z')
+          c2 = c2 - 'A' + 'a';
+
+        if (c1 != c2)
+          break;
+      }
+
+      if (j != nk2->NameLength)
+        continue;
+
+      *key = 0x1000 + lh->List[i].Cell;
+
+      return EFI_SUCCESS;
     } else {
-        unsigned int i = 0;
+      unsigned int j;
 
-        for (i = 0; i < nk2->NameLength / sizeof(wchar_t); i++) {
-            if (i >= NameLength) {
-                overflow = true;
-                break;
-            }
+      if (nk2->NameLength / sizeof(wchar_t) != nblen)
+        continue;
 
-            Name[i] = nk2->Name[i];
-        }
+      for (j = 0; j < nk2->NameLength / sizeof(wchar_t); j++) {
+        wchar_t c1 = nk2->Name[j];
+        wchar_t c2 = namebit[j];
 
-        Name[i] = 0;
+        if (c1 >= 'A' && c1 <= 'Z')
+          c1 = c1 - 'A' + 'a';
+
+        if (c2 >= 'A' && c2 <= 'Z')
+          c2 = c2 - 'A' + 'a';
+
+        if (c1 != c2)
+          break;
+      }
+
+      if (j != nk2->NameLength / sizeof(wchar_t))
+        continue;
+
+      *key = 0x1000 + lh->List[i].Cell;
+
+      return EFI_SUCCESS;
     }
+  }
 
-    return overflow ? EFI_BUFFER_TOO_SMALL : EFI_SUCCESS;
+  return EFI_NOT_FOUND;
 }
 
-static EFI_STATUS find_child_key(hive* h, HKEY parent, const wchar_t* namebit, UINTN nblen, HKEY* key) {
-    int32_t size;
-    CM_KEY_NODE* nk;
-    CM_KEY_FAST_INDEX* lh;
+static EFI_STATUS EFIAPI find_key(EFI_REGISTRY_HIVE* This,
+                                  HKEY               Parent,
+                                  const wchar_t*     Path,
+                                  HKEY*              Key) {
+  EFI_STATUS Status;
+  hive*      h = _CR(This, hive, pub);
+  UINTN      nblen;
+  HKEY       k;
 
-    // find parent key node
-
-    size = -*(int32_t*)((uint8_t*)h->data + parent);
-
-    if (size < 0)
-        return EFI_NOT_FOUND;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
-        return EFI_INVALID_PARAMETER;
-
-    nk = (CM_KEY_NODE*)((uint8_t*)h->data + parent + sizeof(int32_t));
-
-    if (nk->Signature != CM_KEY_NODE_SIGNATURE)
-        return EFI_INVALID_PARAMETER;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk->NameLength)
-        return EFI_INVALID_PARAMETER;
-
-    if (nk->SubKeyCount == 0 || nk->SubKeyList == 0xffffffff)
-        return EFI_NOT_FOUND;
-
-    // go to key index
-
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList);
-
-    if (size < 0)
-        return EFI_NOT_FOUND;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]))
-        return EFI_INVALID_PARAMETER;
-
-    lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
-
-    if (lh->Signature != CM_KEY_HASH_LEAF && lh->Signature != CM_KEY_FAST_LEAF)
-        return EFI_INVALID_PARAMETER;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_FAST_INDEX, List[0]) + (lh->Count * sizeof(CM_INDEX)))
-        return EFI_INVALID_PARAMETER;
-
-    // FIXME - check against hashes if CM_KEY_HASH_LEAF
-
-    for (unsigned int i = 0; i < lh->Count; i++) {
-        CM_KEY_NODE* nk2;
-
-        size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + lh->List[i].Cell);
-
-        if (size < 0)
-            continue;
-
-        if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
-            continue;
-
-        nk2 = (CM_KEY_NODE*)((uint8_t*)h->data + 0x1000 + lh->List[i].Cell + sizeof(int32_t));
-
-        if (nk2->Signature != CM_KEY_NODE_SIGNATURE)
-            continue;
-
-        if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk2->NameLength)
-            continue;
-
-        // FIXME - use string protocol here to do comparison properly?
-
-        if (nk2->Flags & KEY_COMP_NAME) {
-            unsigned int j;
-            char* name = (char*)nk2->Name;
-
-            if (nk2->NameLength != nblen)
-                continue;
-
-            for (j = 0; j < nk2->NameLength; j++) {
-                wchar_t c1 = name[j];
-                wchar_t c2 = namebit[j];
-
-                if (c1 >= 'A' && c1 <= 'Z')
-                    c1 = c1 - 'A' + 'a';
-
-                if (c2 >= 'A' && c2 <= 'Z')
-                    c2 = c2 - 'A' + 'a';
-
-                if (c1 != c2)
-                    break;
-            }
-
-            if (j != nk2->NameLength)
-                continue;
-
-            *key = 0x1000 + lh->List[i].Cell;
-
-            return EFI_SUCCESS;
-        } else {
-            unsigned int j;
-
-            if (nk2->NameLength / sizeof(wchar_t) != nblen)
-                continue;
-
-            for (j = 0; j < nk2->NameLength / sizeof(wchar_t); j++) {
-                wchar_t c1 = nk2->Name[j];
-                wchar_t c2 = namebit[j];
-
-                if (c1 >= 'A' && c1 <= 'Z')
-                    c1 = c1 - 'A' + 'a';
-
-                if (c2 >= 'A' && c2 <= 'Z')
-                    c2 = c2 - 'A' + 'a';
-
-                if (c1 != c2)
-                    break;
-            }
-
-            if (j != nk2->NameLength / sizeof(wchar_t))
-                continue;
-
-            *key = 0x1000 + lh->List[i].Cell;
-
-            return EFI_SUCCESS;
-        }
+  do {
+    nblen = 0;
+    while (Path[nblen] != '\\' && Path[nblen] != 0) {
+      nblen++;
     }
 
+    Status = find_child_key(h, Parent, Path, nblen, &k);
+    if (EFI_ERROR(Status))
+      return Status;
+
+    if (Path[nblen] == 0 || (Path[nblen] == '\\' && Path[nblen + 1] == 0)) {
+      *Key = k;
+      return Status;
+    }
+
+    Parent = k;
+    Path   = &Path[nblen + 1];
+  } while (true);
+}
+
+static EFI_STATUS EFIAPI enum_values(EFI_REGISTRY_HIVE* This,
+                                     HKEY               Key,
+                                     UINT32             Index,
+                                     wchar_t*           Name,
+                                     UINT32             NameLength,
+                                     UINT32*            Type) {
+  hive*         h = _CR(This, hive, pub);
+  int32_t       size;
+  CM_KEY_NODE*  nk;
+  uint32_t*     list;
+  CM_KEY_VALUE* vk;
+  bool          overflow = false;
+
+  // find key node
+
+  size = -*(int32_t*)((uint8_t*)h->data + Key);
+
+  if (size < 0)
     return EFI_NOT_FOUND;
+
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    return EFI_INVALID_PARAMETER;
+
+  nk = (CM_KEY_NODE*)((uint8_t*)h->data + Key + sizeof(int32_t));
+
+  if (nk->Signature != CM_KEY_NODE_SIGNATURE)
+    return EFI_INVALID_PARAMETER;
+
+  if ((uint32_t)size <
+      sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk->NameLength)
+    return EFI_INVALID_PARAMETER;
+
+  if (Index >= nk->ValuesCount || nk->Values == 0xffffffff)
+    return EFI_NOT_FOUND;
+
+  // go to key index
+
+  size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->Values);
+
+  if (size < 0)
+    return EFI_NOT_FOUND;
+
+  if ((uint32_t)size < sizeof(int32_t) + (sizeof(uint32_t) * nk->ValuesCount))
+    return EFI_INVALID_PARAMETER;
+
+  list = (uint32_t*)((uint8_t*)h->data + 0x1000 + nk->Values + sizeof(int32_t));
+
+  // find value node
+
+  size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + list[Index]);
+
+  if (size < 0)
+    return EFI_NOT_FOUND;
+
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]))
+    return EFI_INVALID_PARAMETER;
+
+  vk = (CM_KEY_VALUE*)((uint8_t*)h->data + 0x1000 + list[Index] +
+                       sizeof(int32_t));
+
+  if (vk->Signature != CM_KEY_VALUE_SIGNATURE)
+    return EFI_INVALID_PARAMETER;
+
+  if ((uint32_t)size <
+      sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
+    return EFI_INVALID_PARAMETER;
+
+  if (vk->Flags & VALUE_COMP_NAME) {
+    unsigned int i      = 0;
+    char*        nkname = (char*)vk->Name;
+
+    for (i = 0; i < vk->NameLength; i++) {
+      if (i >= NameLength) {
+        overflow = true;
+        break;
+      }
+
+      Name[i] = nkname[i];
+    }
+
+    Name[i] = 0;
+  } else {
+    unsigned int i = 0;
+
+    for (i = 0; i < vk->NameLength / sizeof(wchar_t); i++) {
+      if (i >= NameLength) {
+        overflow = true;
+        break;
+      }
+
+      Name[i] = vk->Name[i];
+    }
+
+    Name[i] = 0;
+  }
+
+  *Type = vk->Type;
+
+  return overflow ? EFI_BUFFER_TOO_SMALL : EFI_SUCCESS;
 }
 
-static EFI_STATUS EFIAPI find_key(EFI_REGISTRY_HIVE* This, HKEY Parent, const wchar_t* Path, HKEY* Key) {
-    EFI_STATUS Status;
-    hive* h = _CR(This, hive, pub);
-    UINTN nblen;
-    HKEY k;
+static EFI_STATUS EFIAPI query_value_no_copy(EFI_REGISTRY_HIVE* This,
+                                             HKEY               Key,
+                                             const wchar_t*     Name,
+                                             void**             Data,
+                                             UINT32*            DataLength,
+                                             UINT32*            Type) {
+  hive*        h = _CR(This, hive, pub);
+  int32_t      size;
+  CM_KEY_NODE* nk;
+  uint32_t*    list;
+  unsigned int namelen = wcslen(Name);
 
-    do {
-        nblen = 0;
-        while (Path[nblen] != '\\' && Path[nblen] != 0) {
-            nblen++;
-        }
+  // find key node
 
-        Status = find_child_key(h, Parent, Path, nblen, &k);
-        if (EFI_ERROR(Status))
-            return Status;
+  size = -*(int32_t*)((uint8_t*)h->data + Key);
 
-        if (Path[nblen] == 0 || (Path[nblen] == '\\' && Path[nblen + 1] == 0)) {
-            *Key = k;
-            return Status;
-        }
+  if (size < 0)
+    return EFI_NOT_FOUND;
 
-        Parent = k;
-        Path = &Path[nblen + 1];
-    } while (true);
-}
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    return EFI_INVALID_PARAMETER;
 
-static EFI_STATUS EFIAPI enum_values(EFI_REGISTRY_HIVE* This, HKEY Key, UINT32 Index, wchar_t* Name, UINT32 NameLength, UINT32* Type) {
-    hive* h = _CR(This, hive, pub);
-    int32_t size;
-    CM_KEY_NODE* nk;
-    uint32_t* list;
+  nk = (CM_KEY_NODE*)((uint8_t*)h->data + Key + sizeof(int32_t));
+
+  if (nk->Signature != CM_KEY_NODE_SIGNATURE)
+    return EFI_INVALID_PARAMETER;
+
+  if ((uint32_t)size <
+      sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk->NameLength)
+    return EFI_INVALID_PARAMETER;
+
+  if (nk->ValuesCount == 0 || nk->Values == 0xffffffff)
+    return EFI_NOT_FOUND;
+
+  // go to key index
+
+  size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->Values);
+
+  if (size < 0)
+    return EFI_NOT_FOUND;
+
+  if ((uint32_t)size < sizeof(int32_t) + (sizeof(uint32_t) * nk->ValuesCount))
+    return EFI_INVALID_PARAMETER;
+
+  list = (uint32_t*)((uint8_t*)h->data + 0x1000 + nk->Values + sizeof(int32_t));
+
+  // find value node
+
+  for (unsigned int i = 0; i < nk->ValuesCount; i++) {
     CM_KEY_VALUE* vk;
-    bool overflow = false;
 
-    // find key node
-
-    size = -*(int32_t*)((uint8_t*)h->data + Key);
+    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + list[i]);
 
     if (size < 0)
-        return EFI_NOT_FOUND;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
-        return EFI_INVALID_PARAMETER;
-
-    nk = (CM_KEY_NODE*)((uint8_t*)h->data + Key + sizeof(int32_t));
-
-    if (nk->Signature != CM_KEY_NODE_SIGNATURE)
-        return EFI_INVALID_PARAMETER;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk->NameLength)
-        return EFI_INVALID_PARAMETER;
-
-    if (Index >= nk->ValuesCount || nk->Values == 0xffffffff)
-        return EFI_NOT_FOUND;
-
-    // go to key index
-
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->Values);
-
-    if (size < 0)
-        return EFI_NOT_FOUND;
-
-    if ((uint32_t)size < sizeof(int32_t) + (sizeof(uint32_t) * nk->ValuesCount))
-        return EFI_INVALID_PARAMETER;
-
-    list = (uint32_t*)((uint8_t*)h->data + 0x1000 + nk->Values + sizeof(int32_t));
-
-    // find value node
-
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + list[Index]);
-
-    if (size < 0)
-        return EFI_NOT_FOUND;
+      continue;
 
     if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]))
-        return EFI_INVALID_PARAMETER;
+      continue;
 
-    vk = (CM_KEY_VALUE*)((uint8_t*)h->data + 0x1000 + list[Index] + sizeof(int32_t));
+    vk =
+        (CM_KEY_VALUE*)((uint8_t*)h->data + 0x1000 + list[i] + sizeof(int32_t));
 
     if (vk->Signature != CM_KEY_VALUE_SIGNATURE)
-        return EFI_INVALID_PARAMETER;
+      continue;
 
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
-        return EFI_INVALID_PARAMETER;
+    if ((uint32_t)size <
+        sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
+      continue;
 
     if (vk->Flags & VALUE_COMP_NAME) {
-        unsigned int i = 0;
-        char* nkname = (char*)vk->Name;
+      unsigned int j;
+      char*        valname = (char*)vk->Name;
 
-        for (i = 0; i < vk->NameLength; i++) {
-            if (i >= NameLength) {
-                overflow = true;
-                break;
-            }
+      if (vk->NameLength != namelen)
+        continue;
 
-            Name[i] = nkname[i];
-        }
+      for (j = 0; j < vk->NameLength; j++) {
+        wchar_t c1 = valname[j];
+        wchar_t c2 = Name[j];
 
-        Name[i] = 0;
+        if (c1 >= 'A' && c1 <= 'Z')
+          c1 = c1 - 'A' + 'a';
+
+        if (c2 >= 'A' && c2 <= 'Z')
+          c2 = c2 - 'A' + 'a';
+
+        if (c1 != c2)
+          break;
+      }
+
+      if (j != vk->NameLength)
+        continue;
     } else {
-        unsigned int i = 0;
+      unsigned int j;
 
-        for (i = 0; i < vk->NameLength / sizeof(wchar_t); i++) {
-            if (i >= NameLength) {
-                overflow = true;
-                break;
-            }
+      if (vk->NameLength / sizeof(wchar_t) != namelen)
+        continue;
 
-            Name[i] = vk->Name[i];
-        }
+      for (j = 0; j < vk->NameLength / sizeof(wchar_t); j++) {
+        wchar_t c1 = vk->Name[j];
+        wchar_t c2 = Name[j];
 
-        Name[i] = 0;
+        if (c1 >= 'A' && c1 <= 'Z')
+          c1 = c1 - 'A' + 'a';
+
+        if (c2 >= 'A' && c2 <= 'Z')
+          c2 = c2 - 'A' + 'a';
+
+        if (c1 != c2)
+          break;
+      }
+
+      if (j != vk->NameLength / sizeof(wchar_t))
+        continue;
     }
 
-    *Type = vk->Type;
+    if (vk->DataLength &
+        CM_KEY_VALUE_SPECIAL_SIZE) {  // data stored as data offset
+      size_t   datalen = vk->DataLength & ~CM_KEY_VALUE_SPECIAL_SIZE;
+      uint8_t* ptr;
 
-    return overflow ? EFI_BUFFER_TOO_SMALL : EFI_SUCCESS;
+      if (datalen == 4)
+        ptr = (uint8_t*)&vk->Data;
+      else if (datalen == 2)
+        ptr = (uint8_t*)&vk->Data + 2;
+      else if (datalen == 1)
+        ptr = (uint8_t*)&vk->Data + 3;
+      else if (datalen == 0)
+        ptr = NULL;
+      else
+        return EFI_INVALID_PARAMETER;
+
+      *Data = ptr;
+    } else {
+      size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + vk->Data);
+
+      if ((uint32_t)size < vk->DataLength)
+        return EFI_INVALID_PARAMETER;
+
+      *Data = (uint8_t*)h->data + 0x1000 + vk->Data + sizeof(int32_t);
+    }
+
+    // FIXME - handle long "data block" values
+
+    *DataLength = vk->DataLength & ~CM_KEY_VALUE_SPECIAL_SIZE;
+    *Type       = vk->Type;
+
+    return EFI_SUCCESS;
+  }
+
+  return EFI_NOT_FOUND;
 }
 
-static EFI_STATUS EFIAPI query_value_no_copy(EFI_REGISTRY_HIVE* This, HKEY Key, const wchar_t* Name, void** Data,
-                                             UINT32* DataLength, UINT32* Type) {
-    hive* h = _CR(This, hive, pub);
-    int32_t size;
-    CM_KEY_NODE* nk;
-    uint32_t* list;
-    unsigned int namelen = wcslen(Name);
+static EFI_STATUS EFIAPI query_value(EFI_REGISTRY_HIVE* This,
+                                     HKEY               Key,
+                                     const wchar_t*     Name,
+                                     void*              Data,
+                                     UINT32*            DataLength,
+                                     UINT32*            Type) {
+  EFI_STATUS Status;
+  void*      out;
+  UINT32     len;
 
-    // find key node
+  Status = query_value_no_copy(This, Key, Name, &out, &len, Type);
+  if (EFI_ERROR(Status))
+    return Status;
 
-    size = -*(int32_t*)((uint8_t*)h->data + Key);
-
-    if (size < 0)
-        return EFI_NOT_FOUND;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
-        return EFI_INVALID_PARAMETER;
-
-    nk = (CM_KEY_NODE*)((uint8_t*)h->data + Key + sizeof(int32_t));
-
-    if (nk->Signature != CM_KEY_NODE_SIGNATURE)
-        return EFI_INVALID_PARAMETER;
-
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]) + nk->NameLength)
-        return EFI_INVALID_PARAMETER;
-
-    if (nk->ValuesCount == 0 || nk->Values == 0xffffffff)
-        return EFI_NOT_FOUND;
-
-    // go to key index
-
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->Values);
-
-    if (size < 0)
-        return EFI_NOT_FOUND;
-
-    if ((uint32_t)size < sizeof(int32_t) + (sizeof(uint32_t) * nk->ValuesCount))
-        return EFI_INVALID_PARAMETER;
-
-    list = (uint32_t*)((uint8_t*)h->data + 0x1000 + nk->Values + sizeof(int32_t));
-
-    // find value node
-
-    for (unsigned int i = 0; i < nk->ValuesCount; i++) {
-        CM_KEY_VALUE* vk;
-
-        size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + list[i]);
-
-        if (size < 0)
-            continue;
-
-        if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]))
-            continue;
-
-        vk = (CM_KEY_VALUE*)((uint8_t*)h->data + 0x1000 + list[i] + sizeof(int32_t));
-
-        if (vk->Signature != CM_KEY_VALUE_SIGNATURE)
-            continue;
-
-        if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_VALUE, Name[0]) + vk->NameLength)
-            continue;
-
-        if (vk->Flags & VALUE_COMP_NAME) {
-            unsigned int j;
-            char* valname = (char*)vk->Name;
-
-            if (vk->NameLength != namelen)
-                continue;
-
-            for (j = 0; j < vk->NameLength; j++) {
-                wchar_t c1 = valname[j];
-                wchar_t c2 = Name[j];
-
-                if (c1 >= 'A' && c1 <= 'Z')
-                    c1 = c1 - 'A' + 'a';
-
-                if (c2 >= 'A' && c2 <= 'Z')
-                    c2 = c2 - 'A' + 'a';
-
-                if (c1 != c2)
-                    break;
-            }
-
-            if (j != vk->NameLength)
-                continue;
-        } else {
-            unsigned int j;
-
-            if (vk->NameLength / sizeof(wchar_t) != namelen)
-                continue;
-
-            for (j = 0; j < vk->NameLength / sizeof(wchar_t); j++) {
-                wchar_t c1 = vk->Name[j];
-                wchar_t c2 = Name[j];
-
-                if (c1 >= 'A' && c1 <= 'Z')
-                    c1 = c1 - 'A' + 'a';
-
-                if (c2 >= 'A' && c2 <= 'Z')
-                    c2 = c2 - 'A' + 'a';
-
-                if (c1 != c2)
-                    break;
-            }
-
-            if (j != vk->NameLength / sizeof(wchar_t))
-                continue;
-        }
-
-        if (vk->DataLength & CM_KEY_VALUE_SPECIAL_SIZE) { // data stored as data offset
-            size_t datalen = vk->DataLength & ~CM_KEY_VALUE_SPECIAL_SIZE;
-            uint8_t* ptr;
-
-            if (datalen == 4)
-                ptr = (uint8_t*)&vk->Data;
-            else if (datalen == 2)
-                ptr = (uint8_t*)&vk->Data + 2;
-            else if (datalen == 1)
-                ptr = (uint8_t*)&vk->Data + 3;
-            else if (datalen == 0)
-                ptr = NULL;
-            else
-                return EFI_INVALID_PARAMETER;
-
-            *Data = ptr;
-        } else {
-            size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + vk->Data);
-
-            if ((uint32_t)size < vk->DataLength)
-                return EFI_INVALID_PARAMETER;
-
-            *Data = (uint8_t*)h->data + 0x1000 + vk->Data + sizeof(int32_t);
-        }
-
-        // FIXME - handle long "data block" values
-
-        *DataLength = vk->DataLength & ~CM_KEY_VALUE_SPECIAL_SIZE;
-        *Type = vk->Type;
-
-        return EFI_SUCCESS;
-    }
-
-    return EFI_NOT_FOUND;
-}
-
-static EFI_STATUS EFIAPI query_value(EFI_REGISTRY_HIVE* This, HKEY Key, const wchar_t* Name, void* Data,
-                                     UINT32* DataLength, UINT32* Type) {
-    EFI_STATUS Status;
-    void* out;
-    UINT32 len;
-
-    Status = query_value_no_copy(This, Key, Name, &out, &len, Type);
-    if (EFI_ERROR(Status))
-        return Status;
-
-    if (len > *DataLength) {
-        memcpy(Data, out, *DataLength);
-        *DataLength = len;
-        return EFI_BUFFER_TOO_SMALL;
-    }
-
-    memcpy(Data, out, len);
+  if (len > *DataLength) {
+    memcpy(Data, out, *DataLength);
     *DataLength = len;
+    return EFI_BUFFER_TOO_SMALL;
+  }
 
-    return EFI_SUCCESS;
+  memcpy(Data, out, len);
+  *DataLength = len;
+
+  return EFI_SUCCESS;
 }
 
-static EFI_STATUS steal_data(EFI_REGISTRY_HIVE* This, void** Data, UINT32* Size) {
-    hive* h = _CR(This, hive, pub);
+static EFI_STATUS steal_data(EFI_REGISTRY_HIVE* This,
+                             void**             Data,
+                             UINT32*            Size) {
+  hive* h = _CR(This, hive, pub);
 
-    *Data = h->data;
-    *Size = h->size;
+  *Data = h->data;
+  *Size = h->size;
 
-    h->data = NULL;
-    h->size = 0;
+  h->data = NULL;
+  h->size = 0;
 
-    return EFI_SUCCESS;
+  return EFI_SUCCESS;
 }
 
 static void clear_volatile(hive* h, HKEY key) {
-    int32_t size;
-    CM_KEY_NODE* nk;
-    uint16_t sig;
+  int32_t      size;
+  CM_KEY_NODE* nk;
+  uint16_t     sig;
 
-    size = -*(int32_t*)((uint8_t*)h->data + key);
+  size = -*(int32_t*)((uint8_t*)h->data + key);
 
-    if (size < 0)
-        return;
+  if (size < 0)
+    return;
 
-    if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
-        return;
+  if ((uint32_t)size < sizeof(int32_t) + offsetof(CM_KEY_NODE, Name[0]))
+    return;
 
-    nk = (CM_KEY_NODE*)((uint8_t*)h->data + key + sizeof(int32_t));
+  nk = (CM_KEY_NODE*)((uint8_t*)h->data + key + sizeof(int32_t));
 
-    if (nk->Signature != CM_KEY_NODE_SIGNATURE)
-        return;
+  if (nk->Signature != CM_KEY_NODE_SIGNATURE)
+    return;
 
-    nk->VolatileSubKeyList = 0xbaadf00d;
-    nk->VolatileSubKeyCount = 0;
+  nk->VolatileSubKeyList  = 0xbaadf00d;
+  nk->VolatileSubKeyCount = 0;
 
-    if (nk->SubKeyCount == 0 || nk->SubKeyList == 0xffffffff)
-        return;
+  if (nk->SubKeyCount == 0 || nk->SubKeyList == 0xffffffff)
+    return;
 
-    size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList);
+  size = -*(int32_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList);
 
-    sig = *(uint16_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+  sig = *(uint16_t*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList +
+                     sizeof(int32_t));
 
-    if (sig == CM_KEY_HASH_LEAF || sig == CM_KEY_FAST_LEAF) {
-        CM_KEY_FAST_INDEX* lh = (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
+  if (sig == CM_KEY_HASH_LEAF || sig == CM_KEY_FAST_LEAF) {
+    CM_KEY_FAST_INDEX* lh =
+        (CM_KEY_FAST_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList +
+                             sizeof(int32_t));
 
-        for (unsigned int i = 0; i < lh->Count; i++) {
-            clear_volatile(h, 0x1000 + lh->List[i].Cell);
-        }
-    } else if (sig == CM_KEY_INDEX_ROOT) {
-        CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->data + 0x1000 + nk->SubKeyList + sizeof(int32_t));
-
-        for (unsigned int i = 0; i < ri->Count; i++) {
-            clear_volatile(h, 0x1000 + ri->List[i]);
-        }
-    } else {
-        char s[255], *p;
-
-        p = stpcpy(s, "Unhandled registry signature ");
-        p = hex_to_str(p, sig);
-        p = stpcpy(p, ".\n");
-
-        print_string(s);
+    for (unsigned int i = 0; i < lh->Count; i++) {
+      clear_volatile(h, 0x1000 + lh->List[i].Cell);
     }
+  } else if (sig == CM_KEY_INDEX_ROOT) {
+    CM_KEY_INDEX* ri = (CM_KEY_INDEX*)((uint8_t*)h->data + 0x1000 +
+                                       nk->SubKeyList + sizeof(int32_t));
+
+    for (unsigned int i = 0; i < ri->Count; i++) {
+      clear_volatile(h, 0x1000 + ri->List[i]);
+    }
+  } else {
+    char s[255], *p;
+
+    p = stpcpy(s, "Unhandled registry signature ");
+    p = hex_to_str(p, sig);
+    p = stpcpy(p, ".\n");
+
+    print_string(s);
+  }
 }
 
 static bool validate_bins(span<const uint8_t> data) {
-    size_t off = 0;
+  size_t off = 0;
 
-    data = data.subspan(0x1000);
+  data = data.subspan(0x1000);
 
-    while (!data.empty()) {
-        const auto& hb = *(HBIN*)data.data();
+  while (!data.empty()) {
+    const auto& hb = *(HBIN*)data.data();
 
-        if (hb.Signature != HV_HBIN_SIGNATURE) {
-            char s[255], *p;
+    if (hb.Signature != HV_HBIN_SIGNATURE) {
+      char s[255], *p;
 
-            p = stpcpy(s, "Invalid hbin signature in hive at offset ");
-            p = hex_to_str(p, off);
-            p = stpcpy(p, ".\n");
+      p = stpcpy(s, "Invalid hbin signature in hive at offset ");
+      p = hex_to_str(p, off);
+      p = stpcpy(p, ".\n");
 
-            print_string(s);
+      print_string(s);
 
-            return false;
-        }
-
-        if (hb.FileOffset != off) {
-            char s[255], *p;
-
-            p = stpcpy(s, "hbin FileOffset in hive was ");
-            p = hex_to_str(p, hb.FileOffset);
-            p = stpcpy(p, ", expected ");
-            p = hex_to_str(p, off);
-            p = stpcpy(p, ".\n");
-
-            print_string(s);
-
-            return false;
-        }
-
-        if (hb.Size > data.size()) {
-            char s[255], *p;
-
-            p = stpcpy(s, "hbin overrun in hive at offset ");
-            p = hex_to_str(p, off);
-            p = stpcpy(p, ".\n");
-
-            print_string(s);
-
-            return false;
-        }
-
-        if (hb.Size & 0xfff) {
-            char s[255], *p;
-
-            p = stpcpy(s, "hbin Size in hive at offset ");
-            p = hex_to_str(p, off);
-            p = stpcpy(p, " was not multiple of 1000.\n");
-
-            print_string(s);
-
-            return false;
-        }
-
-        off += hb.Size;
-        data = data.subspan(hb.Size);
+      return false;
     }
 
-    return true;
+    if (hb.FileOffset != off) {
+      char s[255], *p;
+
+      p = stpcpy(s, "hbin FileOffset in hive was ");
+      p = hex_to_str(p, hb.FileOffset);
+      p = stpcpy(p, ", expected ");
+      p = hex_to_str(p, off);
+      p = stpcpy(p, ".\n");
+
+      print_string(s);
+
+      return false;
+    }
+
+    if (hb.Size > data.size()) {
+      char s[255], *p;
+
+      p = stpcpy(s, "hbin overrun in hive at offset ");
+      p = hex_to_str(p, off);
+      p = stpcpy(p, ".\n");
+
+      print_string(s);
+
+      return false;
+    }
+
+    if (hb.Size & 0xfff) {
+      char s[255], *p;
+
+      p = stpcpy(s, "hbin Size in hive at offset ");
+      p = hex_to_str(p, off);
+      p = stpcpy(p, " was not multiple of 1000.\n");
+
+      print_string(s);
+
+      return false;
+    }
+
+    off += hb.Size;
+    data = data.subspan(hb.Size);
+  }
+
+  return true;
 }
 
-static EFI_STATUS EFIAPI OpenHive(EFI_FILE_HANDLE File, EFI_REGISTRY_HIVE** Hive) {
-    EFI_STATUS Status;
-    EFI_FILE_INFO file_info;
-    hive* h;
-    EFI_PHYSICAL_ADDRESS addr;
+static EFI_STATUS EFIAPI OpenHive(EFI_FILE_HANDLE     File,
+                                  EFI_REGISTRY_HIVE** Hive) {
+  EFI_STATUS           Status;
+  EFI_FILE_INFO        file_info;
+  hive*                h;
+  EFI_PHYSICAL_ADDRESS addr;
 
-    Status = bs->AllocatePool(EfiLoaderData, sizeof(hive), (void**)&h);
-    if (EFI_ERROR(Status)) {
+  Status = bs->AllocatePool(EfiLoaderData, sizeof(hive), (void**)&h);
+  if (EFI_ERROR(Status)) {
+    print_error("AllocatePool", Status);
+    return Status;
+  }
+
+  {
+    EFI_GUID guid = EFI_FILE_INFO_ID;
+    UINTN    size = sizeof(EFI_FILE_INFO);
+
+    Status = File->GetInfo(File, &guid, &size, &file_info);
+
+    if (Status == EFI_BUFFER_TOO_SMALL) {
+      EFI_FILE_INFO* file_info2;
+
+      Status = bs->AllocatePool(EfiLoaderData, size, (void**)&file_info2);
+      if (EFI_ERROR(Status)) {
         print_error("AllocatePool", Status);
+        bs->FreePool(h);
         return Status;
-    }
+      }
 
-    {
-        EFI_GUID guid = EFI_FILE_INFO_ID;
-        UINTN size = sizeof(EFI_FILE_INFO);
-
-        Status = File->GetInfo(File, &guid, &size, &file_info);
-
-        if (Status == EFI_BUFFER_TOO_SMALL) {
-            EFI_FILE_INFO* file_info2;
-
-            Status = bs->AllocatePool(EfiLoaderData, size, (void**)&file_info2);
-            if (EFI_ERROR(Status)) {
-                print_error("AllocatePool", Status);
-                bs->FreePool(h);
-                return Status;
-            }
-
-            Status = File->GetInfo(File, &guid, &size, file_info2);
-            if (EFI_ERROR(Status)) {
-                print_error("File->GetInfo", Status);
-                bs->FreePool(file_info2);
-                bs->FreePool(h);
-                return Status;
-            }
-
-            h->size = file_info2->FileSize;
-
-            bs->FreePool(file_info2);
-        } else if (EFI_ERROR(Status)) {
-            print_error("File->GetInfo", Status);
-            bs->FreePool(h);
-            return Status;
-        } else
-            h->size = file_info.FileSize;
-    }
-
-    h->pages = h->size / EFI_PAGE_SIZE;
-    if (h->size % EFI_PAGE_SIZE != 0)
-        h->pages++;
-
-    if (h->pages == 0) {
+      Status = File->GetInfo(File, &guid, &size, file_info2);
+      if (EFI_ERROR(Status)) {
+        print_error("File->GetInfo", Status);
+        bs->FreePool(file_info2);
         bs->FreePool(h);
-        return EFI_INVALID_PARAMETER;
+        return Status;
+      }
+
+      h->size = file_info2->FileSize;
+
+      bs->FreePool(file_info2);
+    } else if (EFI_ERROR(Status)) {
+      print_error("File->GetInfo", Status);
+      bs->FreePool(h);
+      return Status;
+    } else
+      h->size = file_info.FileSize;
+  }
+
+  h->pages = h->size / EFI_PAGE_SIZE;
+  if (h->size % EFI_PAGE_SIZE != 0)
+    h->pages++;
+
+  if (h->pages == 0) {
+    bs->FreePool(h);
+    return EFI_INVALID_PARAMETER;
+  }
+
+  Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, h->pages, &addr);
+
+  h->data = (void*)(uintptr_t)addr;
+
+  {
+    UINTN read_size = h->pages * EFI_PAGE_SIZE;
+
+    Status = File->Read(File, &read_size, h->data);
+    if (EFI_ERROR(Status)) {
+      print_error("File->Read", Status);
+      bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)h->data, h->pages);
+      bs->FreePool(h);
+      return Status;
     }
+  }
 
-    Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, h->pages, &addr);
+  if (!check_header(h)) {
+    print_string("Header check failed.\n");
+    bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)h->data, h->pages);
+    bs->FreePool(h);
+    return EFI_INVALID_PARAMETER;
+  }
 
-    h->data = (void*)(uintptr_t)addr;
+  const auto& base_block = *(HBASE_BLOCK*)h->data;
 
-    {
-        UINTN read_size = h->pages * EFI_PAGE_SIZE;
+  // do sanity-checking of hive, to avoid a bug check 74 later on
+  if (!validate_bins(span((uint8_t*)h->data, 0x1000 + base_block.Length))) {
+    bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)h->data, h->pages);
+    bs->FreePool(h);
+    return EFI_INVALID_PARAMETER;
+  }
 
-        Status = File->Read(File, &read_size, h->data);
-        if (EFI_ERROR(Status)) {
-            print_error("File->Read", Status);
-            bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)h->data, h->pages);
-            bs->FreePool(h);
-            return Status;
-        }
-    }
+  clear_volatile(h, 0x1000 + base_block.RootCell);
 
-    if (!check_header(h)) {
-        print_string("Header check failed.\n");
-        bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)h->data, h->pages);
-        bs->FreePool(h);
-        return EFI_INVALID_PARAMETER;
-    }
+  h->pub.Close            = close_hive;
+  h->pub.FindRoot         = find_root;
+  h->pub.EnumKeys         = enum_keys;
+  h->pub.FindKey          = find_key;
+  h->pub.EnumValues       = enum_values;
+  h->pub.QueryValue       = query_value;
+  h->pub.StealData        = steal_data;
+  h->pub.QueryValueNoCopy = query_value_no_copy;
 
-    const auto& base_block = *(HBASE_BLOCK*)h->data;
+  *Hive = &h->pub;
 
-    // do sanity-checking of hive, to avoid a bug check 74 later on
-    if (!validate_bins(span((uint8_t*)h->data, 0x1000 + base_block.Length))) {
-        bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)h->data, h->pages);
-        bs->FreePool(h);
-        return EFI_INVALID_PARAMETER;
-    }
-
-    clear_volatile(h, 0x1000 + base_block.RootCell);
-
-    h->pub.Close = close_hive;
-    h->pub.FindRoot = find_root;
-    h->pub.EnumKeys = enum_keys;
-    h->pub.FindKey = find_key;
-    h->pub.EnumValues = enum_values;
-    h->pub.QueryValue = query_value;
-    h->pub.StealData = steal_data;
-    h->pub.QueryValueNoCopy = query_value_no_copy;
-
-    *Hive = &h->pub;
-
-    return EFI_SUCCESS;
+  return EFI_SUCCESS;
 }

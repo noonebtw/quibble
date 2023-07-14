@@ -4,3 +4,11 @@ AlignConsecutiveBitFields: true
 AlignConsecutiveDeclarations: true
 ColumnLimit: 80
 TabWidth: 4
+SortIncludes: Never
+IncludeCategories:
+    - Regex:    '^"quibble/'
+      Priority: 2
+      SortPriority: 0
+    - Regex:    '^"efi/'
+      Priority: 3
+      SortPriority: 0

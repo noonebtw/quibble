@@ -22,352 +22,367 @@
 #include "x86.h"
 #include "print.h"
 
-void* apiset;
+void*        apiset;
 unsigned int apisetsize;
-void* apisetva;
+void*        apisetva;
 
-EFI_STATUS load_api_set(EFI_BOOT_SERVICES* bs, LIST_ENTRY* images, EFI_PE_LOADER_PROTOCOL* pe, EFI_FILE_HANDLE dir,
-                        void** va, uint16_t version, LIST_ENTRY* mappings, command_line* cmdline) {
-    EFI_STATUS Status;
-    IMAGE_SECTION_HEADER* sections;
-    UINTN num_sections;
-    EFI_PE_IMAGE* dll;
+EFI_STATUS load_api_set(EFI_BOOT_SERVICES*      bs,
+                        LIST_ENTRY*             images,
+                        EFI_PE_LOADER_PROTOCOL* pe,
+                        EFI_FILE_HANDLE         dir,
+                        void**                  va,
+                        uint16_t                version,
+                        LIST_ENTRY*             mappings,
+                        command_line*           cmdline) {
+  EFI_STATUS            Status;
+  IMAGE_SECTION_HEADER* sections;
+  UINTN                 num_sections;
+  EFI_PE_IMAGE*         dll;
 
-    if (version == _WIN32_WINNT_WIN8) {
-        image* img;
-        uint32_t size;
+  if (version == _WIN32_WINNT_WIN8) {
+    image*   img;
+    uint32_t size;
 
-        Status = add_image(bs, images, L"ApiSetSchema.dll", LoaderSystemCode, L"system32", false, NULL, 0, false);
-        if (EFI_ERROR(Status)) {
-            print_error("add_image", Status);
-            return Status;
-        }
-
-        img = _CR(images->Blink, image, list_entry); // get last item
-
-        Status = load_image(img, L"ApiSetSchema.dll", pe, *va, dir, cmdline, 0);
-        if (EFI_ERROR(Status)) {
-            print_error("load_image", Status);
-            return Status;
-        }
-
-        dll = img->img;
-
-        size = dll->GetSize(dll);
-
-        if ((size % EFI_PAGE_SIZE) != 0)
-            size = ((size / EFI_PAGE_SIZE) + 1) * EFI_PAGE_SIZE;
-
-        *va = (uint8_t*)*va + size;
-    } else { // only passed to NT as an image on Windows 8
-        EFI_FILE_HANDLE file;
-
-        Status = open_file(dir, &file, L"ApiSetSchema.dll");
-        if (EFI_ERROR(Status)) {
-            print_string("Loading of ApiSetSchema.dll failed.\n");
-            print_error("file open", Status);
-            return Status;
-        }
-
-        Status = pe->Load(file, NULL, &dll);
-        if (EFI_ERROR(Status)) {
-            print_error("PE load", Status);
-            file->Close(file);
-            return Status;
-        }
-
-        file->Close(file);
-    }
-
-    Status = dll->GetSections(dll, &sections, &num_sections);
+    Status = add_image(bs, images, L"ApiSetSchema.dll", LoaderSystemCode,
+                       L"system32", false, NULL, 0, false);
     if (EFI_ERROR(Status)) {
-        print_error("GetSections", Status);
-        return Status;
+      print_error("add_image", Status);
+      return Status;
     }
 
-    apiset = NULL;
+    img = _CR(images->Blink, image, list_entry);  // get last item
 
-    for (unsigned int i = 0; i < num_sections; i++) {
-        if (!strcmp(sections[i].Name, ".apiset")) {
-            if (sections[i].VirtualSize == 0) {
-                print_string(".apiset section size was 0.\n");
-                return EFI_INVALID_PARAMETER;
-            }
-
-            apiset = (uint8_t*)dll->Data + sections[i].VirtualAddress;
-            apisetsize = sections[i].VirtualSize;
-
-            break;
-        }
+    Status = load_image(img, L"ApiSetSchema.dll", pe, *va, dir, cmdline, 0);
+    if (EFI_ERROR(Status)) {
+      print_error("load_image", Status);
+      return Status;
     }
 
-    if (!apiset) {
-        print_string("Could not find .apiset section in ApiSetSchema.dll.\n");
-        return EFI_NOT_FOUND;
+    dll = img->img;
+
+    size = dll->GetSize(dll);
+
+    if ((size % EFI_PAGE_SIZE) != 0)
+      size = ((size / EFI_PAGE_SIZE) + 1) * EFI_PAGE_SIZE;
+
+    *va = (uint8_t*)*va + size;
+  } else {  // only passed to NT as an image on Windows 8
+    EFI_FILE_HANDLE file;
+
+    Status = open_file(dir, &file, L"ApiSetSchema.dll");
+    if (EFI_ERROR(Status)) {
+      print_string("Loading of ApiSetSchema.dll failed.\n");
+      print_error("file open", Status);
+      return Status;
     }
 
-    if (version >= _WIN32_WINNT_WINBLUE) {
-        EFI_PHYSICAL_ADDRESS addr;
-        void* newapiset;
-
-        Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData, page_count(apisetsize), &addr);
-        if (EFI_ERROR(Status)) {
-            print_error("AllocatePages", Status);
-            return Status;
-        }
-
-        newapiset = (void*)(uintptr_t)addr;
-
-        memcpy(newapiset, apiset, apisetsize);
-
-        apiset = newapiset;
-
-        apisetva = *va;
-
-        Status = add_mapping(bs, mappings, *va, apiset, page_count(apisetsize), LoaderSystemBlock);
-        if (EFI_ERROR(Status)) {
-            print_error("add_mapping", Status);
-            return Status;
-        }
-
-        *va = (uint8_t*)*va + (page_count(apisetsize) * EFI_PAGE_SIZE);
-
-        dll->Free(dll);
+    Status = pe->Load(file, NULL, &dll);
+    if (EFI_ERROR(Status)) {
+      print_error("PE load", Status);
+      file->Close(file);
+      return Status;
     }
 
-    return EFI_SUCCESS;
+    file->Close(file);
+  }
+
+  Status = dll->GetSections(dll, &sections, &num_sections);
+  if (EFI_ERROR(Status)) {
+    print_error("GetSections", Status);
+    return Status;
+  }
+
+  apiset = NULL;
+
+  for (unsigned int i = 0; i < num_sections; i++) {
+    if (!strcmp(sections[i].Name, ".apiset")) {
+      if (sections[i].VirtualSize == 0) {
+        print_string(".apiset section size was 0.\n");
+        return EFI_INVALID_PARAMETER;
+      }
+
+      apiset     = (uint8_t*)dll->Data + sections[i].VirtualAddress;
+      apisetsize = sections[i].VirtualSize;
+
+      break;
+    }
+  }
+
+  if (!apiset) {
+    print_string("Could not find .apiset section in ApiSetSchema.dll.\n");
+    return EFI_NOT_FOUND;
+  }
+
+  if (version >= _WIN32_WINNT_WINBLUE) {
+    EFI_PHYSICAL_ADDRESS addr;
+    void*                newapiset;
+
+    Status = bs->AllocatePages(AllocateAnyPages, EfiLoaderData,
+                               page_count(apisetsize), &addr);
+    if (EFI_ERROR(Status)) {
+      print_error("AllocatePages", Status);
+      return Status;
+    }
+
+    newapiset = (void*)(uintptr_t)addr;
+
+    memcpy(newapiset, apiset, apisetsize);
+
+    apiset = newapiset;
+
+    apisetva = *va;
+
+    Status = add_mapping(bs, mappings, *va, apiset, page_count(apisetsize),
+                         LoaderSystemBlock);
+    if (EFI_ERROR(Status)) {
+      print_error("add_mapping", Status);
+      return Status;
+    }
+
+    *va = (uint8_t*)*va + (page_count(apisetsize) * EFI_PAGE_SIZE);
+
+    dll->Free(dll);
+  }
+
+  return EFI_SUCCESS;
 }
 
 static bool search_api_set_80(wchar_t* dll, wchar_t* newname) {
-    API_SET_NAMESPACE_ARRAY_80* arr = (API_SET_NAMESPACE_ARRAY_80*)apiset;
-    wchar_t n[MAX_PATH];
-    unsigned int len = 0;
+  API_SET_NAMESPACE_ARRAY_80* arr = (API_SET_NAMESPACE_ARRAY_80*)apiset;
+  wchar_t                     n[MAX_PATH];
+  unsigned int                len = 0;
 
-    {
-        wchar_t* s = &dll[4];
-        wchar_t* o = n;
+  {
+    wchar_t* s = &dll[4];
+    wchar_t* o = n;
 
-        while (s) {
-            if (*s == '.')
-                break;
-            else if (*s >= 'A' && *s <= 'Z')
-                *o = *s - 'A' + 'a';
-            else
-                *o = *s;
+    while (s) {
+      if (*s == '.')
+        break;
+      else if (*s >= 'A' && *s <= 'Z')
+        *o = *s - 'A' + 'a';
+      else
+        *o = *s;
 
-            s++;
-            o++;
-            len++;
+      s++;
+      o++;
+      len++;
+    }
+  }
+
+  for (unsigned int i = 0; i < arr->Count; i++) {
+    wchar_t* name  = (wchar_t*)((uint8_t*)apiset + arr->Array[i].NameOffset);
+    bool     found = true;
+    API_SET_VALUE_ARRAY_80* val;
+
+    if (arr->Array[i].NameLength != len * sizeof(wchar_t))
+      continue;
+
+    for (unsigned int j = 0; j < len; j++) {
+      if (name[j] >= 'A' && name[j] <= 'Z') {
+        if (name[j] - 'A' + 'a' != n[j]) {
+          found = false;
+          break;
         }
+      } else if (name[j] != n[j]) {
+        found = false;
+        break;
+      }
     }
 
-    for (unsigned int i = 0; i < arr->Count; i++) {
-        wchar_t* name = (wchar_t*)((uint8_t*)apiset + arr->Array[i].NameOffset);
-        bool found = true;
-        API_SET_VALUE_ARRAY_80* val;
+    if (!found)
+      continue;
 
-        if (arr->Array[i].NameLength != len * sizeof(wchar_t))
-            continue;
+    val =
+        (API_SET_VALUE_ARRAY_80*)((uint8_t*)apiset + arr->Array[i].DataOffset);
 
-        for (unsigned int j = 0; j < len; j++) {
-            if (name[j] >= 'A' && name[j] <= 'Z') {
-                if (name[j] - 'A' + 'a' != n[j]) {
-                    found = false;
-                    break;
-                }
-            } else if (name[j] != n[j]) {
-                found = false;
-                break;
-            }
-        }
+    if (val->Count == 0)
+      return false;
 
-        if (!found)
-            continue;
-
-        val = (API_SET_VALUE_ARRAY_80*)((uint8_t*)apiset + arr->Array[i].DataOffset);
-
-        if (val->Count == 0)
-            return false;
-
-        for (unsigned int j = 0; j < val->Count; j++) {
-            if (val->Array[j].ValueLength > 0) {
-                memcpy(newname, (uint8_t*)apiset + val->Array[j].ValueOffset, val->Array[j].ValueLength);
-                newname[val->Array[j].ValueLength / sizeof(wchar_t)] = 0;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    {
-        char s[255], *p;
-
-        p = stpcpy_utf16(s, dll);
-        p = stpcpy(p, " not found in API set array.\n");
-
-        print_string(s);
+    for (unsigned int j = 0; j < val->Count; j++) {
+      if (val->Array[j].ValueLength > 0) {
+        memcpy(newname, (uint8_t*)apiset + val->Array[j].ValueOffset,
+               val->Array[j].ValueLength);
+        newname[val->Array[j].ValueLength / sizeof(wchar_t)] = 0;
+        return true;
+      }
     }
 
     return false;
+  }
+
+  {
+    char s[255], *p;
+
+    p = stpcpy_utf16(s, dll);
+    p = stpcpy(p, " not found in API set array.\n");
+
+    print_string(s);
+  }
+
+  return false;
 }
 
 static bool search_api_set_81(wchar_t* dll, wchar_t* newname) {
-    API_SET_NAMESPACE_ARRAY_81* arr = (API_SET_NAMESPACE_ARRAY_81*)apiset;
-    wchar_t n[MAX_PATH];
-    unsigned int len = 0;
+  API_SET_NAMESPACE_ARRAY_81* arr = (API_SET_NAMESPACE_ARRAY_81*)apiset;
+  wchar_t                     n[MAX_PATH];
+  unsigned int                len = 0;
 
-    {
-        wchar_t* s = &dll[4];
-        wchar_t* o = n;
+  {
+    wchar_t* s = &dll[4];
+    wchar_t* o = n;
 
-        while (s) {
-            if (*s == '.')
-                break;
-            else if (*s >= 'A' && *s <= 'Z')
-                *o = *s - 'A' + 'a';
-            else
-                *o = *s;
+    while (s) {
+      if (*s == '.')
+        break;
+      else if (*s >= 'A' && *s <= 'Z')
+        *o = *s - 'A' + 'a';
+      else
+        *o = *s;
 
-            s++;
-            o++;
-            len++;
+      s++;
+      o++;
+      len++;
+    }
+  }
+
+  for (unsigned int i = 0; i < arr->Count; i++) {
+    wchar_t* name  = (wchar_t*)((uint8_t*)apiset + arr->Array[i].NameOffset);
+    bool     found = true;
+    API_SET_VALUE_ARRAY_81* val;
+
+    if (arr->Array[i].NameLength != len * sizeof(wchar_t))
+      continue;
+
+    for (unsigned int j = 0; j < len; j++) {
+      if (name[j] >= 'A' && name[j] <= 'Z') {
+        if (name[j] - 'A' + 'a' != n[j]) {
+          found = false;
+          break;
         }
+      } else if (name[j] != n[j]) {
+        found = false;
+        break;
+      }
     }
 
-    for (unsigned int i = 0; i < arr->Count; i++) {
-        wchar_t* name = (wchar_t*)((uint8_t*)apiset + arr->Array[i].NameOffset);
-        bool found = true;
-        API_SET_VALUE_ARRAY_81* val;
+    if (!found)
+      continue;
 
-        if (arr->Array[i].NameLength != len * sizeof(wchar_t))
-            continue;
+    val =
+        (API_SET_VALUE_ARRAY_81*)((uint8_t*)apiset + arr->Array[i].DataOffset);
 
-        for (unsigned int j = 0; j < len; j++) {
-            if (name[j] >= 'A' && name[j] <= 'Z') {
-                if (name[j] - 'A' + 'a' != n[j]) {
-                    found = false;
-                    break;
-                }
-            } else if (name[j] != n[j]) {
-                found = false;
-                break;
-            }
-        }
+    if (val->Count == 0)
+      return false;
 
-        if (!found)
-            continue;
-
-        val = (API_SET_VALUE_ARRAY_81*)((uint8_t*)apiset + arr->Array[i].DataOffset);
-
-        if (val->Count == 0)
-            return false;
-
-        for (unsigned int j = 0; j < val->Count; j++) {
-            if (val->Array[j].ValueLength > 0) {
-                memcpy(newname, (uint8_t*)apiset + val->Array[j].ValueOffset, val->Array[j].ValueLength);
-                newname[val->Array[j].ValueLength / sizeof(wchar_t)] = 0;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    {
-        char s[255], *p;
-
-        p = stpcpy_utf16(s, dll);
-        p = stpcpy(p, " not found in API set array.\n");
-
-        print_string(s);
+    for (unsigned int j = 0; j < val->Count; j++) {
+      if (val->Array[j].ValueLength > 0) {
+        memcpy(newname, (uint8_t*)apiset + val->Array[j].ValueOffset,
+               val->Array[j].ValueLength);
+        newname[val->Array[j].ValueLength / sizeof(wchar_t)] = 0;
+        return true;
+      }
     }
 
     return false;
+  }
+
+  {
+    char s[255], *p;
+
+    p = stpcpy_utf16(s, dll);
+    p = stpcpy(p, " not found in API set array.\n");
+
+    print_string(s);
+  }
+
+  return false;
 }
 
 static bool search_api_set_10(wchar_t* dll, wchar_t* newname) {
-    API_SET_NAMESPACE_HEADER_10* header = (API_SET_NAMESPACE_HEADER_10*)apiset;
-    API_SET_NAMESPACE_ENTRY_10* arr = (API_SET_NAMESPACE_ENTRY_10*)((uint8_t*)apiset + header->ArrayOffset);
-    wchar_t n[MAX_PATH];
-    unsigned int len = 0;
+  API_SET_NAMESPACE_HEADER_10* header = (API_SET_NAMESPACE_HEADER_10*)apiset;
+  API_SET_NAMESPACE_ENTRY_10*  arr =
+      (API_SET_NAMESPACE_ENTRY_10*)((uint8_t*)apiset + header->ArrayOffset);
+  wchar_t      n[MAX_PATH];
+  unsigned int len = 0;
 
-    {
-        wchar_t* s = dll;
-        wchar_t* o = n;
+  {
+    wchar_t* s = dll;
+    wchar_t* o = n;
 
-        while (s) {
-            if (*s == '.')
-                break;
-            else if (*s >= 'A' && *s <= 'Z')
-                *o = *s - 'A' + 'a';
-            else
-                *o = *s;
+    while (s) {
+      if (*s == '.')
+        break;
+      else if (*s >= 'A' && *s <= 'Z')
+        *o = *s - 'A' + 'a';
+      else
+        *o = *s;
 
-            s++;
-            o++;
-            len++;
+      s++;
+      o++;
+      len++;
+    }
+  }
+
+  for (unsigned int i = 0; i < header->Count; i++) {
+    wchar_t* name  = (wchar_t*)((uint8_t*)apiset + arr[i].NameOffset);
+    bool     found = true;
+    API_SET_VALUE_ENTRY_81* val;
+
+    if (arr[i].NameLength != len * sizeof(wchar_t))
+      continue;
+
+    for (unsigned int j = 0; j < len; j++) {
+      if (name[j] >= 'A' && name[j] <= 'Z') {
+        if (name[j] - 'A' + 'a' != n[j]) {
+          found = false;
+          break;
         }
+      } else if (name[j] != n[j]) {
+        found = false;
+        break;
+      }
     }
 
-    for (unsigned int i = 0; i < header->Count; i++) {
-        wchar_t* name = (wchar_t*)((uint8_t*)apiset + arr[i].NameOffset);
-        bool found = true;
-        API_SET_VALUE_ENTRY_81* val;
+    if (!found)
+      continue;
 
-        if (arr[i].NameLength != len * sizeof(wchar_t))
-            continue;
+    if (arr[i].NumberOfHosts == 0)
+      return false;
 
-        for (unsigned int j = 0; j < len; j++) {
-            if (name[j] >= 'A' && name[j] <= 'Z') {
-                if (name[j] - 'A' + 'a' != n[j]) {
-                    found = false;
-                    break;
-                }
-            } else if (name[j] != n[j]) {
-                found = false;
-                break;
-            }
-        }
+    val = (API_SET_VALUE_ENTRY_81*)((uint8_t*)apiset + arr[i].HostsOffset);
 
-        if (!found)
-            continue;
-
-        if (arr[i].NumberOfHosts == 0)
-            return false;
-
-        val = (API_SET_VALUE_ENTRY_81*)((uint8_t*)apiset + arr[i].HostsOffset);
-
-        for (unsigned int j = 0; j < arr[i].NumberOfHosts; j++) {
-            if (val[j].ValueLength > 0) {
-                memcpy(newname, (uint8_t*)apiset + val[j].ValueOffset, val[j].ValueLength);
-                newname[val[j].ValueLength / sizeof(wchar_t)] = 0;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    {
-        char s[255], *p;
-
-        p = stpcpy_utf16(s, dll);
-        p = stpcpy(p, " not found in API set array.\n");
-
-        print_string(s);
+    for (unsigned int j = 0; j < arr[i].NumberOfHosts; j++) {
+      if (val[j].ValueLength > 0) {
+        memcpy(newname, (uint8_t*)apiset + val[j].ValueOffset,
+               val[j].ValueLength);
+        newname[val[j].ValueLength / sizeof(wchar_t)] = 0;
+        return true;
+      }
     }
 
     return false;
+  }
+
+  {
+    char s[255], *p;
+
+    p = stpcpy_utf16(s, dll);
+    p = stpcpy(p, " not found in API set array.\n");
+
+    print_string(s);
+  }
+
+  return false;
 }
 
 bool search_api_set(wchar_t* dll, wchar_t* newname, uint16_t version) {
-    if (version == _WIN32_WINNT_WIN8)
-        return search_api_set_80(dll, newname);
-    else if (version == _WIN32_WINNT_WINBLUE)
-        return search_api_set_81(dll, newname);
-    else if (version == _WIN32_WINNT_WIN10)
-        return search_api_set_10(dll, newname);
-    else
-        return false;
+  if (version == _WIN32_WINNT_WIN8)
+    return search_api_set_80(dll, newname);
+  else if (version == _WIN32_WINNT_WINBLUE)
+    return search_api_set_81(dll, newname);
+  else if (version == _WIN32_WINNT_WIN10)
+    return search_api_set_10(dll, newname);
+  else
+    return false;
 }
