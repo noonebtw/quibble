@@ -32,6 +32,7 @@
 #include "tinymt32.h"
 #include "quibbleproto.h"
 #include "print.h"
+#include <quibble-rs.h>
 
 typedef struct {
     LIST_ENTRY list_entry;
