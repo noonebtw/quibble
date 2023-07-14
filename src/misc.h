@@ -26,7 +26,7 @@
 #include <efierr.h>
 #include <stddef.h>
 
-extern EFI_SYSTEM_TABLE* systable;
+extern EFI_SYSTEM_TABLE *systable;
 
 #ifdef __cplusplus
 extern "C" {
@@ -49,3 +49,14 @@ const char* error_string(EFI_STATUS Status);
 #ifdef __cplusplus
 }
 #endif
+
+#include <quibble-rs.h>
+
+auto operator new(size_t size) -> void * ;
+auto operator new[](size_t size) -> void * ;
+auto operator new(size_t size, std::align_val_t al) -> void * ;
+auto operator new[](size_t size, std::align_val_t al) -> void * ;
+auto operator delete(void *ptr) -> void ;
+auto operator delete[](void *ptr) -> void ;
+auto operator delete(void *ptr, size_t al) -> void ;
+auto operator delete[](void *ptr, size_t al) -> void ;

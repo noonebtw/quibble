@@ -1271,3 +1271,35 @@ void merge_mappings(LIST_ENTRY* mappings) {
         le = le->Flink;
     }
 }
+
+auto operator new(size_t size) -> void * {
+    return nirgendwo::efi_malloc(size);
+}
+
+auto operator new[](size_t size) -> void * {
+    return nirgendwo::efi_malloc(size);
+}
+
+auto operator new(size_t size, std::align_val_t al) -> void * {
+    return nirgendwo::efi_malloc(size);
+}
+
+auto operator new[](size_t size, std::align_val_t al) -> void * {
+    return nirgendwo::efi_malloc(size);
+}
+
+auto operator delete(void *ptr) -> void {
+    return nirgendwo::efi_free(ptr);
+}
+
+auto operator delete[](void *ptr) -> void {
+    return nirgendwo::efi_free(ptr);
+}
+
+auto operator delete(void *ptr, size_t al) -> void {
+    return nirgendwo::efi_free(ptr);
+}
+
+auto operator delete[](void *ptr, size_t al) -> void {
+    return nirgendwo::efi_free(ptr);
+}
