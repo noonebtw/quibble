@@ -10,16 +10,16 @@
 namespace nirgendwo {
 
 struct OperatingSystem {
-  const uint8_t *display_name;
-  const uint16_t *display_namew;
-  const uint8_t *system_path;
-  const uint8_t *options;
+  const char *display_name;
+  const int16_t *display_namew;
+  const char *system_path;
+  char *options;
 };
 
 struct QuibbleOptions {
   uint64_t timeout;
   const uint8_t *default_os;
-  const OperatingSystem *operating_systems;
+  OperatingSystem *operating_systems;
   size_t operating_systems_len;
   size_t operating_systems_capacity;
 };

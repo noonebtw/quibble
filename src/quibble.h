@@ -26,6 +26,7 @@
 #include <efilink.h>
 #include <efipart.h>
 #include <stdbool.h>
+#include "quibble-rs_inner.h"
 #include "win.h"
 
 #define ELLIPSIS "\xe2\x80\xa6"
@@ -196,7 +197,8 @@ EFI_STATUS          load_api_set(EFI_BOOT_SERVICES*      bs,
 bool search_api_set(wchar_t* dll, wchar_t* newname, uint16_t version);
 
 // menu.c
-EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** opt);
+EFI_STATUS show_menu(EFI_SYSTEM_TABLE*            systable,
+                     nirgendwo::OperatingSystem** opt);
 
 // debug.c
 extern void* kdnet_scratch;

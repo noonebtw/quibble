@@ -5,7 +5,7 @@ use alloc::{
 };
 use widestring::U16CString;
 
-pub fn u16_cstring_to_ffi(cstr: U16CString) -> *const u16 {
+pub fn u16_cstring_to_ffi(cstr: U16CString) -> *mut u16 {
     cstr.into_raw()
 }
 
@@ -13,15 +13,15 @@ pub unsafe fn u16_cstring_from_ffi(ptr: *const u16) -> U16CString {
     U16CString::from_ptr_str(ptr)
 }
 
-pub fn str_to_ffi_u16c(cstr: &str) -> *const u16 {
+pub fn str_to_ffi_u16c(cstr: &str) -> *mut u16 {
     u16_cstring_to_ffi(U16CString::from_str(cstr).expect("null byte in string"))
 }
 
-pub fn string_to_ffi(cstr: String) -> *const u8 {
+pub fn string_to_ffi(cstr: String) -> *mut u8 {
     cstring_to_ffi(CString::new(cstr).expect("null byte in string"))
 }
 
-pub fn cstring_to_ffi(cstr: CString) -> *const u8 {
+pub fn cstring_to_ffi(cstr: CString) -> *mut u8 {
     cstr.into_raw().cast()
 }
 
@@ -30,7 +30,7 @@ pub unsafe fn cstring_from_ffi(ptr: *const u8) -> CString {
 }
 
 pub mod ffi {
-    use core::ptr::null_mut;
+    use core::{ffi::c_char, ptr::null_mut};
 
     use alloc::{boxed::Box, ffi::CString, vec::Vec};
 
@@ -40,18 +40,18 @@ pub mod ffi {
 
     #[repr(C)]
     pub struct OperatingSystem {
-        display_name: *const u8,
-        display_namew: *const u16,
-        system_path: *const u8,
-        options: *const u8,
+        display_name: *const c_char,
+        display_namew: *const i16,
+        system_path: *const c_char,
+        options: *mut c_char,
     }
 
     impl OperatingSystem {
         fn from_os(os: &super::OperatingSystem) -> Self {
-            let display_name = string_to_ffi(os.display_name.clone());
-            let display_namew = str_to_ffi_u16c(&os.display_name);
+            let display_name = string_to_ffi(os.display_name.clone()).cast();
+            let display_namew = str_to_ffi_u16c(&os.display_name).cast();
 
-            let system_path = string_to_ffi(os.system_path.clone());
+            let system_path = string_to_ffi(os.system_path.clone()).cast();
 
             let options = os
                 .options
@@ -72,12 +72,12 @@ pub mod ffi {
         pub extern "C" fn operating_system_destroy(this: Self) {
             unsafe {
                 if !this.options.is_null() {
-                    cstring_from_ffi(this.options);
+                    cstring_from_ffi(this.options.cast());
                 }
-                cstring_from_ffi(this.display_name);
-                cstring_from_ffi(this.system_path);
-                u16_cstring_from_ffi(this.display_namew);
-                cstring_from_ffi(this.options);
+                cstring_from_ffi(this.display_name.cast());
+                cstring_from_ffi(this.system_path.cast());
+                u16_cstring_from_ffi(this.display_namew.cast());
+                cstring_from_ffi(this.options.cast());
             }
         }
     }
@@ -86,7 +86,7 @@ pub mod ffi {
     pub struct QuibbleOptions {
         timeout: u64,
         default_os: *const u8,
-        operating_systems: *const OperatingSystem,
+        operating_systems: *mut OperatingSystem,
         operating_systems_len: usize,
         operating_systems_capacity: usize,
     }
@@ -124,7 +124,7 @@ pub mod ffi {
                     cstring_from_ffi(this.default_os);
                 }
                 _ = Vec::from_raw_parts(
-                    this.operating_systems.cast_mut(),
+                    this.operating_systems,
                     this.operating_systems_len,
                     this.operating_systems_capacity,
                 );

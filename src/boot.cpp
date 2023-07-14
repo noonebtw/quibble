@@ -23,6 +23,7 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include "quibble-rs_inner.h"
 #include "quibble.h"
 #include "reg.h"
 #include "peload.h"
@@ -2960,6 +2961,7 @@ static void parse_option(const char*   option,
   static const char alwayson[]  = "ALWAYSON";
 #endif
 
+  // is 'DEBUGPORT=' option?
   if (len > sizeof(debugport) - 1 &&
       !strnicmp(option, debugport, sizeof(debugport) - 1)) {
     Status = systable->BootServices->AllocatePool(
@@ -2973,6 +2975,7 @@ static void parse_option(const char*   option,
     memcpy(cmdline->debug_type, option + sizeof(debugport) - 1,
            len - sizeof(debugport) + 1);
     cmdline->debug_type[len - sizeof(debugport) + 1] = 0;
+	// allocate and clone entire string, null-terminate.
 
     // make lowercase
     for (unsigned int i = 0; i < len - sizeof(debugport) + 1; i++) {
@@ -2980,10 +2983,13 @@ static void parse_option(const char*   option,
         cmdline->debug_type[i] += 'a' - 'A';
     }
 
+	// if it is a com port, just keep 'com'
     if (cmdline->debug_type[0] == 'c' && cmdline->debug_type[1] == 'o' &&
         cmdline->debug_type[2] == 'm' && is_numeric(&cmdline->debug_type[3]))
       cmdline->debug_type[3] = 0;
-  } else if (len > sizeof(hal) - 1 && !strnicmp(option, hal, sizeof(hal) - 1)) {
+  }
+  // is 'HAL=' option?
+  else if (len > sizeof(hal) - 1 && !strnicmp(option, hal, sizeof(hal) - 1)) {
     unsigned int wlen;
 
     Status = utf8_to_utf16(NULL, 0, &wlen, &option[sizeof(hal) - 1],
@@ -3010,8 +3016,10 @@ static void parse_option(const char*   option,
     }
 
     cmdline->hal[wlen / sizeof(wchar_t)] = 0;
-  } else if (len > sizeof(kernel) - 1 &&
-             !strnicmp(option, kernel, sizeof(kernel) - 1)) {
+  }
+  // is 'KERNEL=' option?
+  else if (len > sizeof(kernel) - 1 &&
+           !strnicmp(option, kernel, sizeof(kernel) - 1)) {
     unsigned int wlen;
 
     Status = utf8_to_utf16(NULL, 0, &wlen, &option[sizeof(kernel) - 1],
@@ -3039,8 +3047,10 @@ static void parse_option(const char*   option,
     }
 
     cmdline->kernel[wlen / sizeof(wchar_t)] = 0;
-  } else if (len > sizeof(subvol) - 1 &&
-             !strnicmp(option, subvol, sizeof(subvol) - 1)) {
+  }
+  // is 'SUBVOL=' option?
+  else if (len > sizeof(subvol) - 1 &&
+           !strnicmp(option, subvol, sizeof(subvol) - 1)) {
     uint64_t    sn = 0;
     const char* s  = &option[sizeof(subvol) - 1];
 
@@ -3066,23 +3076,31 @@ static void parse_option(const char*   option,
 
     cmdline->subvol = sn;
 #ifdef _X86_
-  } else if (len == sizeof(pae) - 1 && !strnicmp(option, pae, sizeof(pae) - 1))
+  }
+  // is 'PAE' option?
+  else if (len == sizeof(pae) - 1 && !strnicmp(option, pae, sizeof(pae) - 1))
     cmdline->pae = PAE_FORCEENABLE;
+  // is 'NOPAE' option?
   else if (len == sizeof(nopae) - 1 &&
            !strnicmp(option, nopae, sizeof(nopae) - 1))
     cmdline->pae = PAE_FORCEDISABLE;
+  // is 'NOEXECUTE=' option?
   else if (len > sizeof(nx) - 1 && !strnicmp(option, nx, sizeof(nx) - 1)) {
     const char*  val    = option + sizeof(nx) - 1;
     unsigned int vallen = len - sizeof(nx) + 1;
 
+	// is 'OPTIN' option?
     if (vallen == sizeof(optin) - 1 && !strnicmp(val, optin, sizeof(optin) - 1))
       cmdline->nx = NX_OPTIN;
+    // is 'OPTOUT' option?
     else if (vallen == sizeof(optout) - 1 &&
              !strnicmp(val, optout, sizeof(optout) - 1))
       cmdline->nx = NX_OPTOUT;
+    // is 'ALWAYSOFF' option?
     else if (vallen == sizeof(alwaysoff) - 1 &&
              !strnicmp(val, alwaysoff, sizeof(alwaysoff) - 1))
       cmdline->nx = NX_ALWAYSOFF;
+    // is 'ALWAYSON' option?
     else if (vallen == sizeof(alwayson) - 1 &&
              !strnicmp(val, alwayson, sizeof(alwayson) - 1))
       cmdline->nx = NX_ALWAYSON;
@@ -3147,6 +3165,7 @@ static void parse_options(const char* options, command_line* cmdline) {
   s = options;
   t = s;
 
+  // split at whitespace and parse.
   while (true) {
     while (*t != ' ' && *t != 0) {
       t++;
@@ -5345,7 +5364,7 @@ static EFI_STATUS parse_arc_name(EFI_BOOT_SERVICES*      bs,
                                  char*                   system_path,
                                  EFI_FILE_IO_INTERFACE** fs,
                                  char**                  arc_name,
-                                 char**                  path,
+                                 char** path,
                                  EFI_HANDLE*             fs_handle) {
   EFI_STATUS    Status;
   EFI_GUID      guid = SIMPLE_FILE_SYSTEM_PROTOCOL;
@@ -5501,7 +5520,7 @@ static void EFIAPI stack_changed(EFI_BOOT_SERVICES* bs,
                                  EFI_HANDLE         image_handle) {
   EFI_STATUS              Status;
   UINTN                   Event;
-  boot_option*            opt;
+  nirgendwo::OperatingSystem*            opt;
   char*                   path;
   EFI_GUID                guid         = SIMPLE_FILE_SYSTEM_PROTOCOL;
   EFI_GUID                quibble_guid = EFI_QUIBBLE_PROTOCOL_GUID;
@@ -5550,7 +5569,7 @@ static void EFIAPI stack_changed(EFI_BOOT_SERVICES* bs,
   }
 
   Status =
-      parse_arc_name(bs, opt->system_path, &fs, &arc_name, &path, &fs_handle);
+      parse_arc_name(bs, (char*)opt->system_path, &fs, &arc_name, &path, &fs_handle);
   if (EFI_ERROR(Status)) {
     bs->WaitForEvent(1, &systable->ConIn->WaitForKey, &Event);
     return;

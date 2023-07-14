@@ -17,6 +17,7 @@
 
 #include <string.h>
 #include "config.h"
+#include "quibble-rs_inner.h"
 #include "quibble.h"
 #include "misc.h"
 #include "x86.h"
@@ -44,7 +45,6 @@ typedef struct {
 #define URLW L"https://github.com/maharmstone/quibble"
 
 static const nirgendwo::QuibbleOptions* options2 = nullptr;
-static boot_option*                     options  = NULL;
 static unsigned int                     num_options, selected_option;
 
 extern void*                                framebuffer;
@@ -183,205 +183,6 @@ static EFI_STATUS parse_ini_file(char* data, LIST_ENTRY* ini_sections) {
   return EFI_SUCCESS;
 }
 
-static EFI_STATUS populate_options_from_ini(LIST_ENTRY*   ini_sections,
-                                            unsigned int* timeout) {
-  EFI_STATUS   Status;
-  LIST_ENTRY*  le;
-  ini_section* os_sect      = NULL;
-  ini_section* freeldr_sect = NULL;
-  boot_option* opt;
-  ini_value*   default_val = NULL;
-  unsigned int num         = 0;
-
-  le = ini_sections->Flink;
-  while (le != ini_sections) {
-    ini_section* sect = _CR(le, ini_section, list_entry);
-
-    if (!stricmp(sect->name, "Operating Systems"))
-      os_sect = sect;
-    else if (!stricmp(sect->name, "FREELOADER"))
-      freeldr_sect = sect;
-
-    le = le->Flink;
-  }
-
-  if (!os_sect)
-    return EFI_SUCCESS;
-
-  num_options = 0;
-
-  le = os_sect->children.Flink;
-  while (le != &os_sect->children) {
-    ini_value* v = _CR(le, ini_value, list_entry);
-
-    if (v->value[0] != 0)
-      num_options++;
-
-    le = le->Flink;
-  }
-
-  if (num_options == 0)
-    return EFI_SUCCESS;
-
-  selected_option = 0;
-
-  Status = systable->BootServices->AllocatePool(
-      EfiLoaderData, sizeof(boot_option) * num_options, (void**)&options);
-  if (EFI_ERROR(Status)) {
-    print_error("AllocatePool", Status);
-    return Status;
-  }
-
-  memset(options, 0, sizeof(boot_option) * num_options);
-
-  opt = options;
-
-  if (freeldr_sect) {
-    le = freeldr_sect->children.Flink;
-    while (le != &freeldr_sect->children) {
-      ini_value* v = _CR(le, ini_value, list_entry);
-
-      if (!stricmp(v->name, "DefaultOS"))
-        default_val = v;
-      else if (!stricmp(v->name, "TimeOut")) {
-        bool  numeric = true;
-        char* s       = v->value;
-
-        while (*s != 0) {
-          if (*s < '0' || *s > '9') {
-            numeric = false;
-            break;
-          }
-
-          s++;
-        }
-
-        if (numeric) {
-          s = v->value;
-
-          *timeout = 0;
-
-          while (*s != 0) {
-            *timeout *= 10;
-            *timeout += *s - '0';
-
-            s++;
-          }
-        }
-      }
-
-      le = le->Flink;
-    }
-  }
-
-  num = 0;
-
-  le = os_sect->children.Flink;
-  while (le != &os_sect->children) {
-    ini_value* v = _CR(le, ini_value, list_entry);
-
-    if (v->value[0] != 0) {
-      unsigned int len = strlen(v->value);
-      LIST_ENTRY*  le2;
-      ini_section* sect = NULL;
-      unsigned int wlen;
-
-      if (gop_console) {
-        size_t len = strlen(v->value);
-
-        Status = systable->BootServices->AllocatePool(EfiLoaderData, len + 1,
-                                                      (void**)&opt->name);
-        if (EFI_ERROR(Status)) {
-          print_error("AllocatePool", Status);
-          return Status;
-        }
-
-        memcpy(opt->name, v->value, len + 1);
-      } else {
-        Status = utf8_to_utf16(NULL, 0, &wlen, v->value, len);
-        if (EFI_ERROR(Status)) {
-          print_error("utf8_to_utf16", Status);
-          return Status;
-        }
-
-        Status = systable->BootServices->AllocatePool(
-            EfiLoaderData, wlen + sizeof(wchar_t), (void**)&opt->namew);
-        if (EFI_ERROR(Status)) {
-          print_error("AllocatePool", Status);
-          return Status;
-        }
-
-        Status = utf8_to_utf16(opt->namew, wlen, &wlen, v->value, len);
-        if (EFI_ERROR(Status)) {
-          print_error("utf8_to_utf16", Status);
-          return Status;
-        }
-
-        opt->namew[wlen / sizeof(wchar_t)] = 0;
-      }
-
-      // find matching section
-      le2 = ini_sections->Flink;
-      while (le2 != ini_sections) {
-        ini_section* sect2 = _CR(le2, ini_section, list_entry);
-
-        if (!stricmp(sect2->name, v->name)) {
-          sect = sect2;
-          break;
-        }
-
-        le2 = le2->Flink;
-      }
-
-      if (sect) {
-        le2 = sect->children.Flink;
-
-        while (le2 != &sect->children) {
-          ini_value* v2 = _CR(le2, ini_value, list_entry);
-
-          if (v2->value[0] != 0) {
-            if (!stricmp(v2->name, "SystemPath")) {
-              unsigned int len = strlen(v2->value);
-
-              Status = systable->BootServices->AllocatePool(
-                  EfiLoaderData, len + 1, (void**)&opt->system_path);
-              if (EFI_ERROR(Status)) {
-                print_error("AllocatePool", Status);
-                return Status;
-              }
-
-              memcpy(opt->system_path, v2->value, len + 1);
-            } else if (!stricmp(v2->name, "Options")) {
-              unsigned int len = strlen(v2->value);
-
-              Status = systable->BootServices->AllocatePool(
-                  EfiLoaderData, len + 1, (void**)&opt->options);
-              if (EFI_ERROR(Status)) {
-                print_error("AllocatePool", Status);
-                return Status;
-              }
-
-              memcpy(opt->options, v2->value, len + 1);
-            }
-          }
-
-          le2 = le2->Flink;
-        }
-      }
-
-      if (default_val && !stricmp(v->name, default_val->value))
-        selected_option = num;
-
-      opt++;
-      num++;
-    }
-
-    le = le->Flink;
-  }
-
-  return EFI_SUCCESS;
-}
-
 static EFI_STATUS load_ini_file(unsigned int* timeout) {
   EFI_STATUS                 Status;
   EFI_BOOT_SERVICES*         bs    = systable->BootServices;
@@ -392,10 +193,6 @@ static EFI_STATUS load_ini_file(unsigned int* timeout) {
   EFI_FILE_HANDLE            dir;
   char*                      data = NULL;
   size_t                     size;
-  LIST_ENTRY                 ini_sections;
-  nirgendwo::QuibbleOptions  rs_options;
-
-  InitializeListHead(&ini_sections);
 
   Status = bs->OpenProtocol(image_handle, &guid, (void**)&image, image_handle,
                             NULL, EFI_OPEN_PROTOCOL_BY_HANDLE_PROTOCOL);
@@ -432,38 +229,9 @@ static EFI_STATUS load_ini_file(unsigned int* timeout) {
   }
 
   options2 = nirgendwo::parse_quibble_options((const uint8_t*)data, size);
-
-  Status = parse_ini_file(data, &ini_sections);
-  if (EFI_ERROR(Status)) {
-    print_error("parse_ini_file", Status);
-    goto end;
-  }
-
-  Status = populate_options_from_ini(&ini_sections, timeout);
-  if (EFI_ERROR(Status)) {
-    print_error("populate_options_from_ini", Status);
-    goto end;
-  }
-
-  Status = EFI_SUCCESS;
+  *timeout = options2->timeout;
 
 end:
-  while (!IsListEmpty(&ini_sections)) {
-    ini_section* sect = _CR(ini_sections.Flink, ini_section, list_entry);
-
-    RemoveEntryList(&sect->list_entry);
-
-    while (!IsListEmpty(&sect->children)) {
-      ini_value* v = _CR(sect->children.Flink, ini_value, list_entry);
-
-      RemoveEntryList(&v->list_entry);
-
-      bs->FreePool(v);
-    }
-
-    bs->FreePool(sect);
-  }
-
   if (data)
     bs->FreePages((EFI_PHYSICAL_ADDRESS)(uintptr_t)data, page_count(size));
 
@@ -621,8 +389,8 @@ static EFI_STATUS draw_options(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con,
       options2->operating_systems,
       options2->operating_systems + options2->operating_systems_len);
   for (auto&& [i, os] : range | util::views::enumerate) {
-    Status =
-        draw_option(con, i, cols - 3, options[i].namew, i == selected_option);
+    Status = draw_option(con, i, cols - 3, (wchar_t*)os.display_namew,
+                         i == selected_option);
     if (EFI_ERROR(Status)) {
       print_error("draw_option", Status);
       return Status;
@@ -730,12 +498,15 @@ static void draw_option_gop(unsigned int num, const char* name, bool selected) {
 static void draw_options_gop() {
   // FIXME - paging
 
-  for (unsigned int i = 0; i < num_options; i++) {
-    draw_option_gop(i, options[i].name, i == selected_option);
+  auto range = util::Range(
+      options2->operating_systems,
+      options2->operating_systems + options2->operating_systems_len);
+  for (auto&& [i, os] : range | util::views::enumerate) {
+    draw_option_gop(i, (char*)os.display_name, i == selected_option);
   }
 }
 
-EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** ret) {
+EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, nirgendwo::OperatingSystem** ret) {
   EFI_STATUS                    Status;
   UINTN                         cols, rows;
   EFI_EVENT                     evt;
@@ -805,7 +576,7 @@ EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** ret) {
     return Status;
   }
 
-  if (num_options == 0) {
+  if (options2->operating_systems_len == 0) {
     print_string("No options found in INI file.\n");
     return EFI_ABORTED;
   }
@@ -859,8 +630,8 @@ EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** ret) {
     }
 
     /* The second parameter to CreateEvent was originally TPL_APPLICATION, but
-     * some old EFIs ignore the specs and return EFI_INVALID_PARAMETER if you do
-     * this. */
+     * some old EFIs ignore the specs and return EFI_INVALID_PARAMETER if you
+     * do this. */
     Status = systable->BootServices->CreateEvent(EVT_TIMER, TPL_CALLBACK, NULL,
                                                  NULL, &evt);
     if (EFI_ERROR(Status)) {
@@ -1003,8 +774,13 @@ EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** ret) {
 
         if (key.ScanCode == 1 || key.ScanCode == 2) {
           if (gop_console) {
-            draw_option_gop(old_option, options[old_option].name, false);
-            draw_option_gop(selected_option, options[selected_option].name,
+            draw_option_gop(
+                old_option,
+                (char*)options2->operating_systems[old_option].display_name,
+                false);
+            draw_option_gop(selected_option,
+                            (char*)options2->operating_systems[selected_option]
+                                .display_name,
                             true);
           } else {
             Status = draw_options(con, cols);
@@ -1018,7 +794,7 @@ EFI_STATUS show_menu(EFI_SYSTEM_TABLE* systable, boot_option** ret) {
     } while (true);
   }
 
-  *ret = &options[selected_option];
+  *ret = &options2->operating_systems[selected_option];
 
   if (gop_console) {
     memset(framebuffer, 0,
