@@ -23,6 +23,7 @@ x86_64 = "0.14"
 
 rust-ini = {path = "/home/user/code/rust/nostd/rust-ini", default-features = false}
 anyhow = {version = "1.0", default-features = false}
+widestring = {version = "1.0.2", default-features = false, features = ["alloc"]}
 
 [build-dependencies]
 cbindgen = "*"

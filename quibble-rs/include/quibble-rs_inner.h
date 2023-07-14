@@ -11,6 +11,7 @@ namespace nirgendwo {
 
 struct OperatingSystem {
   const uint8_t *display_name;
+  const uint16_t *display_namew;
   const uint8_t *system_path;
   const uint8_t *options;
 };
@@ -32,11 +33,11 @@ void efi_free(void *ptr);
 
 char *efi_malloc(size_t size);
 
-void operating_system_destroy(OperatingSystem self);
+void operating_system_destroy(OperatingSystem this_);
 
-QuibbleOptions parse_quibble_options(const uint8_t *data, size_t len);
+const QuibbleOptions *parse_quibble_options(const uint8_t *data, size_t len);
 
-void quibble_options_destroy(QuibbleOptions self);
+void quibble_options_destroy(const QuibbleOptions *this_);
 
 } // extern "C"
 

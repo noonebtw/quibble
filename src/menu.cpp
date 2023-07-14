@@ -21,6 +21,10 @@
 #include "misc.h"
 #include "x86.h"
 #include "print.h"
+#include "quibble-rs.h"
+
+#include "range.hpp"
+
 
 typedef struct {
     LIST_ENTRY list_entry;
@@ -40,6 +44,7 @@ typedef struct {
 #define URL "https://github.com/maharmstone/quibble"
 #define URLW L"https://github.com/maharmstone/quibble"
 
+static const nirgendwo::QuibbleOptions* options2 = nullptr;
 static boot_option* options = NULL;
 static unsigned int num_options, selected_option;
 
@@ -412,8 +417,7 @@ static EFI_STATUS load_ini_file(unsigned int* timeout) {
         goto end;
     }
 
-	rs_options = nirgendwo::parse_quibble_options((const uint8_t*)data, size);
-	nirgendwo::quibble_options_destroy(std::move(rs_options));
+	options2 = nirgendwo::parse_quibble_options((const uint8_t*)data, size);
 
 	Status = parse_ini_file(data, &ini_sections);
 	if (EFI_ERROR(Status)) {
@@ -590,13 +594,15 @@ static EFI_STATUS draw_options(EFI_SIMPLE_TEXT_OUT_PROTOCOL* con, unsigned int c
 
     // FIXME - paging
 
-    for (unsigned int i = 0; i < num_options; i++) {
-        Status = draw_option(con, i, cols - 3, options[i].namew, i == selected_option);
-        if (EFI_ERROR(Status)) {
-            print_error("draw_option", Status);
-            return Status;
-        }
-    }
+	auto range = util::Range(options2->operating_systems, options2->operating_systems+options2->operating_systems_len);
+	for (auto&& [i, os] : range | util::views::enumerate) {
+		Status = draw_option(con, i, cols - 3, options[i].namew,
+					i == selected_option);
+		if (EFI_ERROR(Status)) {
+			print_error("draw_option", Status);
+			return Status;
+		}
+	}
 
     return EFI_SUCCESS;
 }

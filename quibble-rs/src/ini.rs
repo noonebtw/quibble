@@ -1,39 +1,62 @@
 use alloc::{
+    ffi::CString,
     string::{String, ToString},
     vec::Vec,
 };
+use widestring::U16CString;
+
+pub fn u16_cstring_to_ffi(cstr: U16CString) -> *const u16 {
+    cstr.into_raw()
+}
+
+pub unsafe fn u16_cstring_from_ffi(ptr: *const u16) -> U16CString {
+    U16CString::from_ptr_str(ptr)
+}
+
+pub fn str_to_ffi_u16c(cstr: &str) -> *const u16 {
+    u16_cstring_to_ffi(U16CString::from_str(cstr).expect("null byte in string"))
+}
+
+pub fn string_to_ffi(cstr: String) -> *const u8 {
+    cstring_to_ffi(CString::new(cstr).expect("null byte in string"))
+}
+
+pub fn cstring_to_ffi(cstr: CString) -> *const u8 {
+    cstr.into_raw().cast()
+}
+
+pub unsafe fn cstring_from_ffi(ptr: *const u8) -> CString {
+    CString::from_raw(ptr as *mut _)
+}
 
 pub mod ffi {
     use core::ptr::null_mut;
 
-    use alloc::{ffi::CString, vec::Vec};
+    use alloc::{boxed::Box, ffi::CString, vec::Vec};
+
+    use super::{
+        cstring_from_ffi, cstring_to_ffi, str_to_ffi_u16c, string_to_ffi, u16_cstring_from_ffi,
+    };
 
     #[repr(C)]
     pub struct OperatingSystem {
         display_name: *const u8,
+        display_namew: *const u16,
         system_path: *const u8,
         options: *const u8,
     }
 
     impl OperatingSystem {
         fn from_os(os: &super::OperatingSystem) -> Self {
-            let display_name = CString::new(os.display_name.clone())
-                .expect("null byte in display_name.")
-                .into_raw()
-                .cast();
-            let system_path = CString::new(os.system_path.clone())
-                .expect("null byte in system_path.")
-                .into_raw()
-                .cast();
+            let display_name = string_to_ffi(os.display_name.clone());
+            let display_namew = str_to_ffi_u16c(&os.display_name);
+
+            let system_path = string_to_ffi(os.system_path.clone());
 
             let options = os
                 .options
-                .as_ref()
-                .map(|options| {
-                    CString::new(options.clone())
-                        .expect("null byte in options")
-                        .into_raw()
-                })
+                .clone()
+                .map(|options| string_to_ffi(options))
                 .unwrap_or(null_mut())
                 .cast();
 
@@ -41,17 +64,20 @@ pub mod ffi {
                 display_name,
                 system_path,
                 options,
+                display_namew,
             }
         }
 
         #[no_mangle]
-        pub extern "C" fn operating_system_destroy(self) {
+        pub extern "C" fn operating_system_destroy(this: Self) {
             unsafe {
-                if !self.options.is_null() {
-                    _ = CString::from_raw(self.options as *mut _);
+                if !this.options.is_null() {
+                    cstring_from_ffi(this.options);
                 }
-                _ = CString::from_raw(self.display_name as *mut _);
-                _ = CString::from_raw(self.system_path as *mut _);
+                cstring_from_ffi(this.display_name);
+                cstring_from_ffi(this.system_path);
+                u16_cstring_from_ffi(this.display_namew);
+                cstring_from_ffi(this.options);
             }
         }
     }
@@ -69,12 +95,8 @@ pub mod ffi {
         fn from_options(options: super::Options) -> Self {
             let default_os = options
                 .default_os
-                .as_ref()
-                .map(|options| {
-                    CString::new(options.clone())
-                        .expect("null byte in default os name")
-                        .into_raw()
-                })
+                .clone()
+                .map(|options| string_to_ffi(options))
                 .unwrap_or(null_mut())
                 .cast();
 
@@ -95,28 +117,29 @@ pub mod ffi {
         }
 
         #[no_mangle]
-        pub extern "C" fn quibble_options_destroy(self) {
+        pub extern "C" fn quibble_options_destroy(this: *const Self) {
             unsafe {
-                if !self.default_os.is_null() {
-                    _ = CString::from_raw(self.default_os as *mut _);
+                let this = Box::from_raw(this.cast_mut());
+                if !this.default_os.is_null() {
+                    cstring_from_ffi(this.default_os);
                 }
                 _ = Vec::from_raw_parts(
-                    self.operating_systems.cast_mut(),
-                    self.operating_systems_len,
-                    self.operating_systems_capacity,
+                    this.operating_systems.cast_mut(),
+                    this.operating_systems_len,
+                    this.operating_systems_capacity,
                 );
             }
         }
 
         #[no_mangle]
-        pub extern "C" fn parse_quibble_options(data: *const u8, len: usize) -> Self {
+        pub extern "C" fn parse_quibble_options(data: *const u8, len: usize) -> *const Self {
             let contents =
                 core::str::from_utf8(unsafe { core::slice::from_raw_parts(data.cast(), len) })
                     .expect("ini file contents were not proper utf8.");
             let options =
                 super::Options::parse_from_bytes(contents).expect("failed to parse ini file.");
 
-            Self::from_options(options)
+            Box::leak(Box::new(Self::from_options(options)))
         }
     }
 }
