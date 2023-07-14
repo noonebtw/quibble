@@ -7,7 +7,6 @@ extern crate alloc;
 pub use quibble_rs::{
     add_10,
     allocator::{efi_free, efi_malloc},
-    say_hello,
 };
 
 #[lang = "eh_personality"]

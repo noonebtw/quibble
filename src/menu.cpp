@@ -375,6 +375,7 @@ static EFI_STATUS load_ini_file(unsigned int* timeout) {
     char* data = NULL;
     size_t size;
     LIST_ENTRY ini_sections;
+	nirgendwo::QuibbleOptions rs_options;
 
     InitializeListHead(&ini_sections);
 
@@ -411,8 +412,11 @@ static EFI_STATUS load_ini_file(unsigned int* timeout) {
         goto end;
     }
 
-    Status = parse_ini_file(data, &ini_sections);
-    if (EFI_ERROR(Status)) {
+	rs_options = nirgendwo::parse_quibble_options((const uint8_t*)data, size);
+	nirgendwo::quibble_options_destroy(std::move(rs_options));
+
+	Status = parse_ini_file(data, &ini_sections);
+	if (EFI_ERROR(Status)) {
         print_error("parse_ini_file", Status);
         goto end;
     }

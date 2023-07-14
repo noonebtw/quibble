@@ -65,6 +65,7 @@ fn build_quibble(profile: Profile) -> std::path::PathBuf {
         "qemu/esp/EFI/BOOT/drivers/btrfs.efi",
     );
 
+    _ = std::fs::remove_file("compile_commands.json");
     _ = fs::symlink(
         build_dir.join("compile_commands.json"),
         "compile_commands.json",

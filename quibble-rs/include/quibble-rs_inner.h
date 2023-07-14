@@ -9,9 +9,18 @@
 
 namespace nirgendwo {
 
-struct MyType {
-  uint64_t i;
-  float f;
+struct OperatingSystem {
+  const uint8_t *display_name;
+  const uint8_t *system_path;
+  const uint8_t *options;
+};
+
+struct QuibbleOptions {
+  uint64_t timeout;
+  const uint8_t *default_os;
+  const OperatingSystem *operating_systems;
+  size_t operating_systems_len;
+  size_t operating_systems_capacity;
 };
 
 
@@ -23,9 +32,11 @@ void efi_free(void *ptr);
 
 char *efi_malloc(size_t size);
 
-MyType my_type_new();
+void operating_system_destroy(OperatingSystem self);
 
-void say_hello();
+QuibbleOptions parse_quibble_options(const uint8_t *data, size_t len);
+
+void quibble_options_destroy(QuibbleOptions self);
 
 } // extern "C"
 

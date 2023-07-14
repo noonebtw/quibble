@@ -1,32 +1,20 @@
 #![no_std]
+#![feature(vec_into_raw_parts, c_variadic)]
+
+use core::ffi::{c_char, CStr};
 
 use uefi::table::{Boot, SystemTable};
 
 extern crate alloc;
 
 pub mod allocator;
+pub mod ini;
 
 extern "C" {
     static mut systable: SystemTable<Boot>;
 }
 
-#[repr(C)]
-pub struct MyType {
-    i: u64,
-    f: f32,
-}
-
 #[no_mangle]
 pub extern "C" fn add_10(i: u64) -> u64 {
     i + 10
-}
-
-#[no_mangle]
-pub extern "C" fn say_hello() {
-    log::info!("Hello!");
-}
-
-#[no_mangle]
-pub extern "C" fn my_type_new() -> MyType {
-    MyType { i: 2, f: 3.4 }
 }

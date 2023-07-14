@@ -21,5 +21,8 @@ uefi = {version = "0.24.0", features = ["alloc"]}
 raw-cpuid = "10.0"
 x86_64 = "0.14"
 
+rust-ini = {path = "/home/user/code/rust/nostd/rust-ini", default-features = false}
+anyhow = {version = "1.0", default-features = false}
+
 [build-dependencies]
 cbindgen = "*"
