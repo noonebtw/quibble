@@ -13,5 +13,5 @@ fn build_bindings() {
         .with_crate(crate_dir)
         .generate()
         .expect("Failed to generate C bindings!")
-        .write_to_file("include/quibble-rs.h");
+        .write_to_file("include/quibble-rs_inner.h");
 }

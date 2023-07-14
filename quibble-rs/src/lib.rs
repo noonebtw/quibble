@@ -1,9 +1,13 @@
 #![no_std]
-use core::panic::PanicInfo;
 
-#[panic_handler]
-fn panic(_panic: &PanicInfo<'_>) -> ! {
-    loop {}
+use uefi::table::{Boot, SystemTable};
+
+extern crate alloc;
+
+pub mod allocator;
+
+extern "C" {
+    static mut systable: SystemTable<Boot>;
 }
 
 #[repr(C)]
@@ -15,6 +19,11 @@ pub struct MyType {
 #[no_mangle]
 pub extern "C" fn add_10(i: u64) -> u64 {
     i + 10
+}
+
+#[no_mangle]
+pub extern "C" fn say_hello() {
+    log::info!("Hello!");
 }
 
 #[no_mangle]
