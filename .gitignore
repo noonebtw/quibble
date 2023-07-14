@@ -5,3 +5,4 @@ quibble-rs/target
 /qemu/esp/EFI/BOOT/BOOTX64.EFI
 /qemu/esp/EFI/BOOT/drivers/
 /compile_commands.json
+/qemu/ovmf/
