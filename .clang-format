@@ -1,0 +1,6 @@
+BasedOnStyle: Chromium
+AlignConsecutiveAssignments: true
+AlignConsecutiveBitFields: true
+AlignConsecutiveDeclarations: true
+ColumnLimit: 80
+TabWidth: 4
