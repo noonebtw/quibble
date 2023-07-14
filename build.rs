@@ -41,7 +41,7 @@ fn main() {
         "cargo:rustc-link-search=native={}",
         quibble.join("build").join("harfbuzz").display()
     );
-    println!("cargo:rustc-link-lib=static=libquibble");
+    println!("cargo:rustc-link-lib=static=quibble");
     println!("cargo:rustc-link-lib=static=harfbuzz");
     println!("cargo:rustc-link-lib=static=freetype");
 }

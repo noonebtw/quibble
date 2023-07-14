@@ -43,8 +43,7 @@ endif()
 
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 
-add_executable(quibble ${SRC_FILES})
-add_library(libquibble STATIC ${SRC_FILES})
+add_library(quibble STATIC ${SRC_FILES})
 
 set(FT_DISABLE_BZIP2 TRUE)
 set(FT_DISABLE_HARFBUZZ TRUE)
@@ -66,8 +65,6 @@ add_subdirectory(btrfs)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(freetype/include)
 
-set_target_properties(quibble PROPERTIES SUFFIX ".efi")
-
 include_directories(gnu-efi)
 if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64" OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
     include_directories(gnu-efi/x86_64)
@@ -81,12 +78,6 @@ target_compile_options(quibble PRIVATE
      $<$<CXX_COMPILER_ID:MSVC>:
           /W4 /Oi->)
 
-        target_compile_options(libquibble PRIVATE
-          $<$<OR:$<CXX_COMPILER_ID:Clang>,$<CXX_COMPILER_ID:AppleClang>,$<CXX_COMPILER_ID:GNU>>:
-          -Wall -Wextra -Wno-address-of-packed-member -Werror=pointer-arith -fno-exceptions -Wno-dangling-reference>
-          $<$<CXX_COMPILER_ID:MSVC>:
-          /W4 /Oi->)
-
 if (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "AMD64" OR ${CMAKE_SYSTEM_PROCESSOR} STREQUAL "x86_64")
     add_definitions(-D__x86_64__)
 elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "X86")
@@ -94,18 +85,15 @@ elseif (${CMAKE_SYSTEM_PROCESSOR} STREQUAL "X86")
 endif()
 
 target_compile_definitions(quibble PUBLIC "$<$<CONFIG:DEBUG>:DEBUG>")
-target_compile_definitions(libquibble PUBLIC "$<$<CONFIG:DEBUG>:DEBUG>")
 
 if(${CMAKE_C_COMPILER_ID} STREQUAL "GNU" OR ${CMAKE_C_COMPILER_ID} STREQUAL "Clang")
-target_compile_options(quibble PRIVATE "-ffreestanding")
+target_compile_options(quibble PUBLIC "-ffreestanding")
 target_compile_options(quibble PRIVATE "-fno-stack-protector")
 target_compile_options(quibble PRIVATE "-fno-stack-check")
 target_compile_options(quibble PRIVATE "-mno-stack-arg-probe")
 
-target_compile_options(libquibble PRIVATE "-ffreestanding")
-target_compile_options(libquibble PRIVATE "-fno-stack-protector")
-target_compile_options(libquibble PRIVATE "-fno-stack-check")
-target_compile_options(libquibble PRIVATE "-mno-stack-arg-probe")
+
+target_include_directories(quibble PRIVATE ${CMAKE_SOURCE_DIR}/quibble-rs/include)
 
 target_link_options(quibble PRIVATE "-nostartfiles")
 target_link_options(quibble PRIVATE "-shared")
@@ -128,6 +116,3 @@ endif()
 
 target_link_libraries(quibble freetype)
 target_link_libraries(quibble harfbuzz)
-
-target_link_libraries(libquibble freetype)
-target_link_libraries(libquibble harfbuzz)
